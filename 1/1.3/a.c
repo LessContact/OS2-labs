@@ -2,14 +2,15 @@
 #include <pthread.h>
 #include <stdlib.h>
 #include <string.h>
+#include <unistd.h>
 
-typedef struct Node {
+typedef struct test {
     int value_int;
     char* ptr_char;
-}Node;
+}test;
 
 void* my_thread(void *arg) {
-    struct Node* node = (struct Node*)arg;
+    struct test* node = (struct test*)arg;
 
     printf("value_int value: %d\n", node->value_int);
     printf("ptr_char ptr: %s\n", node->ptr_char);
@@ -18,7 +19,7 @@ void* my_thread(void *arg) {
 }
 
 int main() {
-    struct Node node;
+    struct test node;
     node.value_int = 42;
     node.ptr_char = "hello";
 
