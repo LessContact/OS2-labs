@@ -10,23 +10,23 @@ typedef struct test {
 }test;
 
 void* my_thread(void *arg) {
-    struct test* node = (struct test*)arg;
+    struct test* test = (struct test*)arg;
 
-    printf("value_int value: %d\n", node->value_int);
-    printf("ptr_char ptr: %s\n", node->ptr_char);
+    printf("value_int value: %d\n", test->value_int);
+    printf("ptr_char ptr: %s\n", test->ptr_char);
 
     return NULL;
 }
 
 int main() {
-    struct test node;
-    node.value_int = 42;
-    node.ptr_char = "hello";
+    struct test test;
+    test.value_int = 42;
+    test.ptr_char = "hello";
 
     pthread_t tid;
 
     printf("hello ");
-    int err = pthread_create(&tid, NULL, my_thread, (void *)&node);
+    int err = pthread_create(&tid, NULL, my_thread, (void *)&test);
     if (err) {
         fprintf(stderr, "main: pthread_create() failed: %s\n", strerror(err));
         return EXIT_FAILURE;
