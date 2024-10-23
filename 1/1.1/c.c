@@ -5,6 +5,7 @@
 #include <sys/types.h>
 #include <unistd.h>
 #include <stdlib.h>
+#define _GNU_SOURCE
 
 //watch -d -n1 cat /proc//maps
 // static_local : почему разные адреса
