@@ -25,7 +25,7 @@ int main() {
 
 	void* ret_val;
 	err = pthread_join(tid, &ret_val);
-	//можно sleep просто
+	//sleep(5);
 
 	if (err) {
 		fprintf(stderr, "main: pthread_join() failed %s\n", strerror(err));

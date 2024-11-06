@@ -10,8 +10,7 @@ typedef struct test {
 }test;
 
 void* my_thread(void *arg) {
-    struct test* test = (struct test*)arg;
-
+    test* test = (struct test*)arg;
     printf("value_int value: %d\n", test->value_int);
     printf("ptr_char ptr: %s\n", test->ptr_char);
 

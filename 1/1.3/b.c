@@ -21,7 +21,12 @@ int main() {
     test* test1 = malloc(sizeof(test));
     test1->value_int = 42;
     test1->ptr_char = "hello";
+
     pthread_attr_t attr;
+
+    test test2;
+    test2.value_int = 142;
+    test2.ptr_char = "hello from 2";
 
     pthread_attr_init(&attr);
 
@@ -35,6 +40,13 @@ int main() {
 
     pthread_t thread;
     err = pthread_create(&thread, &attr, my_thread, (void *)test1);
+    if (err) {
+        fprintf(stderr, "main: pthread_create() failed: %s\n", strerror(err));
+        free(test1);
+        return EXIT_FAILURE;
+    }
+    pthread_t thread2;
+    err = pthread_create(&thread2, &attr, my_thread, &test2);
     if (err) {
         fprintf(stderr, "main: pthread_create() failed: %s\n", strerror(err));
         free(test1);

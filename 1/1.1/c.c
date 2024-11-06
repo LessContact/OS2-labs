@@ -8,8 +8,6 @@
 #define _GNU_SOURCE
 
 //watch -d -n1 cat /proc//maps
-// static_local : почему разные адреса
-
 
 static int global_value = 10;
 

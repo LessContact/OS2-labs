@@ -11,6 +11,7 @@
 
 void* my_thread() {
     printf("my_thread [%d %d %d %lu]: Hello from my_thread!\n", getpid(), getppid(), gettid(), (unsigned long)pthread_self());
+    getc(stdin);
     return NULL;
 }
 
@@ -28,12 +29,12 @@ int main() {
         }
         count++;
         printf("thread count current: %d\n", count);
-        err = pthread_join(tid, &ret_val);
-        if (err) {
-            fprintf(stderr, "main: pthread_join() failed %s\n", strerror(err));
-            free(ret_val);
-            return EXIT_FAILURE;
-        }
+        // err = pthread_join(tid, &ret_val);
+        // if (err) {
+        //     fprintf(stderr, "main: pthread_join() failed %s\n", strerror(err));
+        //     free(ret_val);
+        //     return EXIT_FAILURE;
+        // }
     }
     return EXIT_SUCCESS;
 }
