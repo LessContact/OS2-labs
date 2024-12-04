@@ -30,7 +30,7 @@ int main() {
         fprintf(stderr, "main: pthread_create() failed: %s\n", strerror(err));
         return EXIT_FAILURE;
     }
-    sleep(2);
+
     void* ret_val;
     err = pthread_join(tid, &ret_val);
     if (err) {

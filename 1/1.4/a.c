@@ -20,7 +20,7 @@ int main() {
         return EXIT_FAILURE;
     }
 
-    sleep(1);
+    sleep(5);
 
     err = pthread_cancel(tid);
     if (err) {

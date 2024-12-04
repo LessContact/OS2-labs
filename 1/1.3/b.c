@@ -3,6 +3,7 @@
 #include <stdlib.h>
 #include <string.h>
 #include <unistd.h>
+#include <sys/syscall.h>
 
 typedef struct test {
     int value_int;
@@ -13,7 +14,8 @@ void* my_thread(void *arg) {
     test* test1 = (struct test*)arg;
     printf("value_int value: %d\n", test1->value_int);
     printf("ptr_char ptr: %s\n", test1->ptr_char);
-
+// getc(stdin);
+    //free ();
     return NULL;
 }
 
@@ -52,10 +54,14 @@ int main() {
         free(test1);
         return EXIT_FAILURE;
     }
-
-    sleep(2);
     pthread_attr_destroy(&attr);
 
+    // sleep(2); //todo чтобы без sleep работало
+
     free(test1);
-    return EXIT_SUCCESS;
+    // _exit(1);
+    syscall(SYS_exit, 0);
+    // sys_exit(237);
+    // pthread_exit(NULL);
+    // return EXIT_SUCCESS;
 }

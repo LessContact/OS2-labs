@@ -18,7 +18,7 @@ void* my_thread(void *arg) {
     }
     strcpy(arr_hello_world, "hello world\n");
 
-    pthread_cleanup_push(free_handler, arr_hello_world);
+    pthread_cleanup_push(free_handler, arr_hello_world); // todo: какие есть проблемы при аснихронном cancel не считая утечек
 
     while(true) {
         printf("%s", arr_hello_world);

@@ -5,18 +5,31 @@
 #include <stdbool.h>
 #include <unistd.h>
 
+int flag = 0;
+void cancel() {
+    flag = 1;
+}
+
+void testcancel() {
+    if (flag) {
+        pthread_exit(0);
+    }
+}
+
 void* my_thread(void *arg) {
     int old_state;
     int count_inter = 0;
-    int err = pthread_setcanceltype(PTHREAD_CANCEL_ASYNCHRONOUS, &old_state);
+    // int err = pthread_setcanceltype(PTHREAD_CANCEL_ASYNCHRONOUS, &old_state);
     printf("old state %d\n", old_state);
-    if (err) {
-        fprintf(stderr, "main: pthread_setcancelstate() failed %s\n", strerror(err));
-        pthread_exit(NULL);
-    }
+    // if (err) {
+    //     fprintf(stderr, "main: pthread_setcancelstate() failed %s\n", strerror(err));
+    //     pthread_exit(NULL);
+    // }//todo: почему асинхронный cancel не по умолчанпию
+
 
     while(true) {
         ++count_inter;
+        // pthread_testcancel();
     }
     return NULL;
 }

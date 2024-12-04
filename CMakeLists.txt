@@ -27,5 +27,14 @@ add_executable(1.4.c 1/1.4/c.c)
 add_executable(1.5.a 1/1.5/a.c)
 
 
+add_library(mythreadlib STATIC 1/1.6/mythread_create.c 1/1.6/mythread_create.h)
+add_executable(mythread 1/1.6/main.c)
+target_link_libraries(mythread mythreadlib)
+
+#==========================================================================================================
+
+add_executable(q-example 2/2.1/queue-example.c 2/2.1/queue.c)
+add_executable(q-th 2/2.1/queue-threads.c 2/2.1/queue.c)
+add_executable(q-hz 2/2.1/queue2.c)
 
 
