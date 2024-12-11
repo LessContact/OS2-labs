@@ -1,8 +1,27 @@
 #define _GNU_SOURCE
 #include <pthread.h>
 #include <assert.h>
+#include <semaphore.h>
 
 #include "queue.h"
+
+pthread_mutex_t mutex_full = PTHREAD_MUTEX_INITIALIZER;
+// pthread_mutex_t mutex = PTHREAD_ERRORCHECK_MUTEX_INITIALIZER_NP;
+sem_t sem_emptiness;
+sem_t sem_fullness;
+
+void init_sem(int max_count) {
+	int err = sem_init(&sem_fullness, 0, 0);
+	if (err) printf("sem_init() failed: %s\n", strerror(err));
+	err = sem_init(&sem_emptiness, 0, max_count);
+	if (err) printf("sem_init() failed: %s\n", strerror(err));
+	// pthread_mutexattr_t* att;
+	// int err = pthread_mutex_init(&mutex, &att);
+	// pthread_mutexattr_setpshared(&att, PTHREAD_PROCESS_PRIVATE);
+	// mutex = PTHREAD_MUTEX_INITIALIZER;
+
+	// if (err) printf("main: pthread_mutex_init() failed: %s\n", strerror(err));
+}
 
 void *qmonitor(void *arg) {
 	queue_t *q = (queue_t *)arg;
@@ -66,8 +85,8 @@ int queue_add(queue_t *q, int val) {
 
 	assert(q->count <= q->max_count);
 
-	if (q->count == q->max_count)
-		return 0;
+	sem_wait(&sem_emptiness);
+	pthread_mutex_lock(&mutex_full);
 
 	qnode_t *new = malloc(sizeof(qnode_t));
 	if (!new) {
@@ -80,28 +99,29 @@ int queue_add(queue_t *q, int val) {
 
 	if (!q->first)
 		q->first = q->last = new;
-	else { // maybe also if
-		//it goes into this branch and the getter reads the first and only element
-		//it may segfault?
+	else {
 		q->last->next = new;
 		q->last = q->last->next;
 	}
 
-	q->count++; // the count is pretty much always broken
-	q->add_count++;
+	q->count++;
 
+	sem_post(&sem_fullness);
+	pthread_mutex_unlock(&mutex_full);
+
+	q->add_count++;
 	return 1;
 }
+
 
 int queue_get(queue_t *q, int *val) {
 	q->get_attempts++;
 
 	assert(q->count >= 0);
 
-	if (q->count == 0)
-		return 0;
-	// there is a chance that the q->count is actually 0
-	// but the q->count will not reflect that so tmp will result in NULL
+	sem_wait(&sem_fullness);
+	pthread_mutex_lock(&mutex_full);
+
 	qnode_t *tmp = q->first;
 
 	*val = tmp->val;
@@ -109,8 +129,11 @@ int queue_get(queue_t *q, int *val) {
 
 	free(tmp);
 	q->count--;
-	q->get_count++;
 
+	sem_post(&sem_emptiness);
+	pthread_mutex_unlock(&mutex_full);
+
+	q->get_count++;
 	return 1;
 }
 

@@ -4,6 +4,31 @@
 
 #include "queue.h"
 
+// pthread_mutex_t mutex_full;
+// pthread_mutex_t mutex_empty;
+pthread_cond_t cond_not_empty;
+pthread_cond_t cond_not_full;
+
+// pthread_mutex_t mutex_not_empty;
+// pthread_mutex_t mutex_not_full;
+pthread_mutex_t mutex = PTHREAD_MUTEX_INITIALIZER;
+// pthread_mutex_t mutex = PTHREAD_ERRORCHECK_MUTEX_INITIALIZER_NP;
+
+void init_mutex() {
+ 	int err;
+	err = pthread_cond_init(&cond_not_empty, NULL);
+	if (err) printf("main: pthread_cond_init() failed: %s\n", strerror(err));
+	err = pthread_cond_init(&cond_not_full, NULL);
+	if (err) printf("main: pthread_cond_init() failed: %s\n", strerror(err));
+
+	// pthread_mutexattr_t* att;
+	// int err = pthread_mutex_init(&mutex, &att);
+	// pthread_mutexattr_setpshared(&att, PTHREAD_PROCESS_PRIVATE);
+	// mutex = PTHREAD_MUTEX_INITIALIZER;
+
+	// if (err) printf("main: pthread_mutex_init() failed: %s\n", strerror(err));
+}
+
 void *qmonitor(void *arg) {
 	queue_t *q = (queue_t *)arg;
 
@@ -61,17 +86,17 @@ void queue_destroy(queue_t *q) {
 	free(q);
 }
 
+
 int queue_add(queue_t *q, int val) {
-	q->add_attempts++;
-
-	assert(q->count <= q->max_count);
-
-	if (q->count == q->max_count)
-		return 0;
+	q->get_attempts++;
+	pthread_mutex_lock(&mutex);
+	while (q->count == q->max_count) {
+		pthread_cond_wait(&cond_not_full, &mutex);
+	}
 
 	qnode_t *new = malloc(sizeof(qnode_t));
 	if (!new) {
-		printf("Cannot allocate memory for new node\n");
+		printf("malloc: cannot allocate memory for new node\n");
 		abort();
 	}
 
@@ -80,37 +105,38 @@ int queue_add(queue_t *q, int val) {
 
 	if (!q->first)
 		q->first = q->last = new;
-	else { // maybe also if
-		//it goes into this branch and the getter reads the first and only element
-		//it may segfault?
+	else {
 		q->last->next = new;
 		q->last = q->last->next;
 	}
 
-	q->count++; // the count is pretty much always broken
+	q->count++;
 	q->add_count++;
 
+	pthread_cond_signal(&cond_not_empty);
+	pthread_mutex_unlock(&mutex);
 	return 1;
 }
 
 int queue_get(queue_t *q, int *val) {
 	q->get_attempts++;
+	pthread_mutex_lock(&mutex);
+	while (q->count == 0) {
+		pthread_cond_wait(&cond_not_empty, &mutex);
+	}
 
-	assert(q->count >= 0);
-
-	if (q->count == 0)
-		return 0;
-	// there is a chance that the q->count is actually 0
-	// but the q->count will not reflect that so tmp will result in NULL
 	qnode_t *tmp = q->first;
 
 	*val = tmp->val;
 	q->first = q->first->next;
 
-	free(tmp);
 	q->count--;
 	q->get_count++;
 
+	pthread_cond_signal(&cond_not_full);
+
+	pthread_mutex_unlock(&mutex);
+	free(tmp);
 	return 1;
 }
 

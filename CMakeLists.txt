@@ -37,4 +37,12 @@ add_executable(q-example 2/2.1/queue-example.c 2/2.1/queue.c)
 add_executable(q-th 2/2.1/queue-threads.c 2/2.1/queue.c)
 add_executable(q-hz 2/2.1/queue2.c)
 
+add_executable(q-spin 2/2.2/spinlock/queue.c 2/2.2/spinlock/queue-threads.c)
+add_executable(q-mutex 2/2.2/mutex/queue-threads.c 2/2.2/mutex/queue.c)
+add_executable(q-condvar 2/2.2/condvar/queue-threads.c 2/2.2/condvar/queue.c)
+add_executable(q-sem 2/2.2/semaphor/queue.c 2/2.2/semaphor/queue-threads.c)
+
+add_executable(list-mutex 2/2.3/mutex/storage.c 2/2.3/mutex/main.c)
+
+
 

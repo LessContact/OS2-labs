@@ -67,6 +67,7 @@ void *writer(void *arg) {
 			continue;
 		i++;
 		// sched_yield();
+		// if(i % 3 == 0)
 		// usleep(1);
 	}
 
@@ -81,7 +82,13 @@ int main() {
 
 	printf("main [%d %d %d]\n", getpid(), getppid(), gettid());
 
-	q = queue_init(1000);
+	q = queue_init(1000000);
+
+	// if(init_spin_lock()) {
+	// 	printf("init_spin_lock failed\n");
+	// 	return 1;
+	// }
+    init_mutex();
 
 	err = pthread_create(&tid_reader, NULL, reader, q);
 	if (err) {

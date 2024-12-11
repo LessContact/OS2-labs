@@ -67,6 +67,7 @@ void *writer(void *arg) {
 			continue;
 		i++;
 		// sched_yield();
+		// if(i % 3 == 0)
 		// usleep(1);
 	}
 
@@ -78,10 +79,16 @@ int main() {
 	pthread_t tid_reader, tid_writer;
 	queue_t *q;
 	int err;
-
 	printf("main [%d %d %d]\n", getpid(), getppid(), gettid());
 
-	q = queue_init(1000);
+	int max_count = 1000000;
+	q = queue_init(max_count);
+
+	init_sem(max_count);
+	// if(init_spin_lock()) {
+	// 	printf("init_spin_lock failed\n");
+	// 	return 1;
+	// }
 
 	err = pthread_create(&tid_reader, NULL, reader, q);
 	if (err) {
