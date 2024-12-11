@@ -11,7 +11,7 @@ pthread_cond_t cond_not_full;
 
 // pthread_mutex_t mutex_not_empty;
 // pthread_mutex_t mutex_not_full;
-pthread_mutex_t mutex = PTHREAD_MUTEX_INITIALIZER;
+pthread_mutex_t mutex;
 // pthread_mutex_t mutex = PTHREAD_ERRORCHECK_MUTEX_INITIALIZER_NP;
 
 void init_mutex() {
@@ -20,6 +20,9 @@ void init_mutex() {
 	if (err) printf("main: pthread_cond_init() failed: %s\n", strerror(err));
 	err = pthread_cond_init(&cond_not_full, NULL);
 	if (err) printf("main: pthread_cond_init() failed: %s\n", strerror(err));
+	err = pthread_mutex_init(&mutex, NULL);
+	if (err) printf("main: pthread_mutex_init() failed: %s\n", strerror(err));
+
 
 	// pthread_mutexattr_t* att;
 	// int err = pthread_mutex_init(&mutex, &att);
@@ -84,11 +87,14 @@ void queue_destroy(queue_t *q) {
 		cur_ptr_q = next_ptr_q;
 	}
 	free(q);
+	pthread_mutex_destroy(&mutex);
+	pthread_cond_destroy(&cond_not_full);
+	pthread_cond_destroy(&cond_not_empty);
 }
 
 
 int queue_add(queue_t *q, int val) {
-	q->get_attempts++;
+	q->add_attempts++;
 	pthread_mutex_lock(&mutex);
 	while (q->count == q->max_count) {
 		pthread_cond_wait(&cond_not_full, &mutex);

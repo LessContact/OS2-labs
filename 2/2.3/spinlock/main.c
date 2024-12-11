@@ -11,6 +11,7 @@
 #include <sched.h>
 
 #include "storage.h"
+#include <threads.h>
 
 #define STORAGE_SIZE 100000
 
@@ -20,6 +21,19 @@
 #define CPU_Swap1 4
 #define CPU_Swap2 5
 #define CPU_Swap3 6
+
+int thread_local rng_state = 0xDEADBEEF;
+
+int rand() {
+    int x = rng_state;
+    for (int i = 0; i < 75; i++) {
+        x ^= x << 13;
+        x ^= x >> 17;
+        x ^= x << 5;
+    }
+    rng_state = x;
+    return x;
+}
 
 typedef struct stats {
     size_t asc_iters;
@@ -333,6 +347,7 @@ int main(int argc, char **argv) {
         return -1;
     }
 
+    set_cpu(0);
     while (1) {
         sleep(1);
         print_stats();

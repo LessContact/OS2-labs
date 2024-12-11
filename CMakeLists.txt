@@ -2,9 +2,6 @@ cmake_minimum_required(VERSION 3.29)
 project(OS2_labs C)
 
 set(CMAKE_C_STANDARD 23)
-add_compile_options(${CMAKE_C_FLAGS})
-#was doing some testing
-add_executable(test 1/1.2/test.c)
 
 add_executable(1.1.a 1/1.1/a.c)
 add_executable(1.1.b 1/1.1/b.c)
@@ -31,11 +28,14 @@ add_library(mythreadlib STATIC 1/1.6/mythread_create.c 1/1.6/mythread_create.h)
 add_executable(mythread 1/1.6/main.c)
 target_link_libraries(mythread mythreadlib)
 
+add_library(uthreadlib STATIC 1/1.7/uthread.c 1/1.7/uthread.h)
+add_executable(uthread 1/1.7/main.c)
+target_link_libraries(uthread uthreadlib)
+
 #==========================================================================================================
 
 add_executable(q-example 2/2.1/queue-example.c 2/2.1/queue.c)
 add_executable(q-th 2/2.1/queue-threads.c 2/2.1/queue.c)
-add_executable(q-hz 2/2.1/queue2.c)
 
 add_executable(q-spin 2/2.2/spinlock/queue.c 2/2.2/spinlock/queue-threads.c)
 add_executable(q-mutex 2/2.2/mutex/queue-threads.c 2/2.2/mutex/queue.c)
@@ -45,6 +45,5 @@ add_executable(q-sem 2/2.2/semaphor/queue.c 2/2.2/semaphor/queue-threads.c)
 add_executable(list-mutex 2/2.3/mutex/storage.c 2/2.3/mutex/main.c)
 add_executable(list-spin 2/2.3/spinlock/storage.c 2/2.3/spinlock/main.c)
 add_executable(list-rwl 2/2.3/rwlock/storage.c 2/2.3/rwlock/main.c)
-
 
 

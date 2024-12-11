@@ -66,6 +66,7 @@ void queue_destroy(queue_t *q) {
 		cur_ptr_q = next_ptr_q;
 	}
 	free(q);
+	pthread_spin_destroy(&spinlock);
 }
 
 int queue_add(queue_t *q, int val) {

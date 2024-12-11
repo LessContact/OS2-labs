@@ -5,7 +5,7 @@
 
 #include "queue.h"
 
-pthread_mutex_t mutex_full = PTHREAD_MUTEX_INITIALIZER;
+pthread_mutex_t mutex_full;
 // pthread_mutex_t mutex = PTHREAD_ERRORCHECK_MUTEX_INITIALIZER_NP;
 sem_t sem_emptiness;
 sem_t sem_fullness;
@@ -15,6 +15,8 @@ void init_sem(int max_count) {
 	if (err) printf("sem_init() failed: %s\n", strerror(err));
 	err = sem_init(&sem_emptiness, 0, max_count);
 	if (err) printf("sem_init() failed: %s\n", strerror(err));
+	err = pthread_mutex_init(&mutex_full, NULL);
+	if (err) printf("pthread_mutex_init() failed: %s\n", strerror(err));
 	// pthread_mutexattr_t* att;
 	// int err = pthread_mutex_init(&mutex, &att);
 	// pthread_mutexattr_setpshared(&att, PTHREAD_PROCESS_PRIVATE);
@@ -78,6 +80,9 @@ void queue_destroy(queue_t *q) {
 		cur_ptr_q = next_ptr_q;
 	}
 	free(q);
+	pthread_mutex_destroy(&mutex_full);
+	sem_destroy(&sem_emptiness);
+	sem_destroy(&sem_fullness);
 }
 
 int queue_add(queue_t *q, int val) {
