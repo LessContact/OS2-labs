@@ -37,7 +37,7 @@ void *reader(void *arg) {
 	queue_t *q = (queue_t *)arg;
 	printf("reader [%d %d %d]\n", getpid(), getppid(), gettid());
 
-	set_cpu(1);
+	set_cpu(2);
 
 	while (1) {
 		int val = -1;
@@ -59,7 +59,7 @@ void *writer(void *arg) {
 	queue_t *q = (queue_t *)arg;
 	printf("writer [%d %d %d]\n", getpid(), getppid(), gettid());
 
-	set_cpu(2);
+	set_cpu(1);
 
 	while (1) {
 		int ok = queue_add(q, i);
@@ -81,15 +81,27 @@ int main() {
 
 	printf("main [%d %d %d]\n", getpid(), getppid(), gettid());
 
-	q = queue_init(1000);
+	q = queue_init(1000000);
 
-	err = pthread_create(&tid_reader, NULL, reader, q);
+	// err = pthread_create(&tid_reader, NULL, reader, q);
+	// if (err) {
+	// 	printf("main: pthread_create() failed: %s\n", strerror(err));
+	// 	return -1;
+	// }
+	// sched_yield();
+	// err = pthread_create(&tid_writer, NULL, writer, q);
+	// if (err) {
+	// 	printf("main: pthread_create() failed: %s\n", strerror(err));
+	// 	return -1;
+	// }
+
+	err = pthread_create(&tid_writer, NULL, writer, q);
 	if (err) {
 		printf("main: pthread_create() failed: %s\n", strerror(err));
 		return -1;
 	}
 	sched_yield();
-	err = pthread_create(&tid_writer, NULL, writer, q);
+	err = pthread_create(&tid_reader, NULL, reader, q);
 	if (err) {
 		printf("main: pthread_create() failed: %s\n", strerror(err));
 		return -1;

@@ -78,6 +78,13 @@ int queue_add(queue_t *q, int val) {
 	new->val = val;
 	new->next = NULL;
 
+	// error scheme:
+	// writer записал 0, пытается ещё записать 1(попадает в else), но тут его время кончается
+	// затем, reader прочитал 0(и убрал q->first, в то время как о q->last он не знает),
+	// и тут writer проснулся, записав 1 в last = new(но first у нас теперь NULL)
+	// writer пытается записать теперь 2, q->first is NULL, а в q->last у нас 1 лежит, мы благополучно затираем это
+	// reader просыпается и считывает 2 вместо пропавшей 1.
+
 	if (!q->first)
 		q->first = q->last = new;
 	else { // maybe also if
@@ -103,7 +110,6 @@ int queue_get(queue_t *q, int *val) {
 	// there is a chance that the q->count is actually 0
 	// but the q->count will not reflect that so tmp will result in NULL
 	qnode_t *tmp = q->first;
-
 	*val = tmp->val;
 	q->first = q->first->next;
 

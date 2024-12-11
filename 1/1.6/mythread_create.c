@@ -95,9 +95,12 @@ int my_thread_create(_my_thread* thread, start_routine_t start_routine, void *ar
 
 
 void* my_thread(void *arg) {
-    char *str = (char *) arg;
+    usleep(rand() % 1000);
+    //sleep(1);
+    // char *str = (char *) arg;
+    int number = (int)arg;
     long long numb = 123123123213;
-    printf("my thread [%d %d %d]: %s, %lld\n", getpid(), getppid(), gettid(), str, numb);
+    printf("my thread [%d %d %d]: %i, %lld\n", getpid(), getppid(), gettid(), number, numb);
     // sleep(1000);
     return NULL;
 }

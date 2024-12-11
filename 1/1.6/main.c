@@ -9,9 +9,12 @@ int main() {
 
     printf("main [%d %d %d]: Hello from main!\n", getpid(), getppid(), gettid());
     // while(true) {
-    int ret = my_thread_create(&my_tid, my_thread, "Hello from my thread!");
-    if(ret == -1) {
-        printf("my_thread_create error!\n");
+    for (int i = 0; i < 100; i++) {
+        int ret = my_thread_create(&my_tid, my_thread, i);
+        if(ret == -1) {
+            printf("my_thread_create error!\n");
+        }
+
     }
     // }
     // sleep(5);

@@ -11,11 +11,20 @@ typedef struct test {
 }test;
 
 void* my_thread(void *arg) {
-    test* test1 = (struct test*)arg;
+    test* test1 = arg;
     printf("value_int value: %d\n", test1->value_int);
     printf("ptr_char ptr: %s\n", test1->ptr_char);
 // getc(stdin);
     //free ();
+    return NULL;
+}
+
+void* my_thread2(void *arg) {
+    test* test1 = arg;
+    printf("value_int value: %d\n", test1->value_int);
+    printf("ptr_char ptr: %s\n", test1->ptr_char);
+    // getc(stdin);
+    free (test1);
     return NULL;
 }
 
@@ -41,7 +50,7 @@ int main() {
     }
 
     pthread_t thread;
-    err = pthread_create(&thread, &attr, my_thread, (void *)test1);
+    err = pthread_create(&thread, &attr, my_thread2, test1);
     if (err) {
         fprintf(stderr, "main: pthread_create() failed: %s\n", strerror(err));
         free(test1);
@@ -56,12 +65,12 @@ int main() {
     }
     pthread_attr_destroy(&attr);
 
-    // sleep(2); //todo чтобы без sleep работало
+    // sleep(2);
 
-    free(test1);
+    // free(test1);
     // _exit(1);
-    syscall(SYS_exit, 0);
+    // syscall(SYS_exit, 0);
     // sys_exit(237);
-    // pthread_exit(NULL);
+    pthread_exit(NULL);
     // return EXIT_SUCCESS;
 }

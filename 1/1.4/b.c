@@ -24,7 +24,7 @@ void* my_thread(void *arg) {
     // if (err) {
     //     fprintf(stderr, "main: pthread_setcancelstate() failed %s\n", strerror(err));
     //     pthread_exit(NULL);
-    // }//todo: почему асинхронный cancel не по умолчанпию
+    // }
 
 
     while(true) {

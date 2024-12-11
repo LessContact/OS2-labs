@@ -43,6 +43,8 @@ add_executable(q-condvar 2/2.2/condvar/queue-threads.c 2/2.2/condvar/queue.c)
 add_executable(q-sem 2/2.2/semaphor/queue.c 2/2.2/semaphor/queue-threads.c)
 
 add_executable(list-mutex 2/2.3/mutex/storage.c 2/2.3/mutex/main.c)
+add_executable(list-spin 2/2.3/spinlock/storage.c 2/2.3/spinlock/main.c)
+add_executable(list-rwl 2/2.3/rwlock/storage.c 2/2.3/rwlock/main.c)
 
 
 
