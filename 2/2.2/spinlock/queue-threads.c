@@ -68,7 +68,7 @@ void *writer(void *arg) {
 		i++;
 		// sched_yield();
 		// if(i % 3 == 0)
-		// usleep(1);
+		usleep(1);
 	}
 
 	return NULL;

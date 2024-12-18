@@ -83,24 +83,25 @@ void count_asc(Storage* storage) {
         Node* tmp;
 
         while (cur != NULL) {
-            pthread_mutex_lock(&cur->sync);
+            pthread_rwlock_rdlock(&cur->sync);
             tmp = cur;
 
             next = cur->next;
             if (next == NULL) {
-                pthread_mutex_unlock(&cur->sync);
+                pthread_rwlock_unlock(&cur->sync);
                 break;
             }
-            pthread_mutex_lock(&next->sync);
+            pthread_rwlock_rdlock(&next->sync);
 
             if (strlen(cur->value) < strlen(next->value)) stats.asc_string_count++;
 
             cur = cur->next;
 
-            pthread_mutex_unlock(&cur->sync);
-            pthread_mutex_unlock(&tmp->sync);
+            pthread_rwlock_unlock(&cur->sync);
+            pthread_rwlock_unlock(&tmp->sync);
         }
         stats.asc_iters++;
+        stats.asc_string_count = 0;
     }
 }
 
@@ -112,24 +113,25 @@ void count_desc(Storage* storage) {
         Node* tmp;
 
         while (cur != NULL) {
-            pthread_mutex_lock(&cur->sync);
+            pthread_rwlock_rdlock(&cur->sync);
             tmp = cur;
 
             next = cur->next;
             if (next == NULL) {
-                pthread_mutex_unlock(&cur->sync);
+                pthread_rwlock_unlock(&cur->sync);
                 break;
             }
-            pthread_mutex_lock(&next->sync);
+            pthread_rwlock_rdlock(&next->sync);
 
             if (strlen(cur->value) > strlen(next->value)) stats.desc_string_count++;
 
             cur = cur->next;
 
-            pthread_mutex_unlock(&cur->sync);
-            pthread_mutex_unlock(&tmp->sync);
+            pthread_rwlock_unlock(&cur->sync);
+            pthread_rwlock_unlock(&tmp->sync);
         }
         stats.desc_iters++;
+        stats.desc_string_count = 0;
     }
 }
 
@@ -141,24 +143,25 @@ void count_eq(Storage* storage) {
         Node* tmp;
 
         while (cur != NULL) {
-            pthread_mutex_lock(&cur->sync);
+            pthread_rwlock_rdlock(&cur->sync);
             tmp = cur;
 
             next = cur->next;
             if (next == NULL) {
-                pthread_mutex_unlock(&cur->sync);
+                pthread_rwlock_unlock(&cur->sync);
                 break;
             }
-            pthread_mutex_lock(&next->sync);
+            pthread_rwlock_rdlock(&next->sync);
 
             if (strlen(cur->value) == strlen(next->value)) stats.eq_string_count++;
 
             cur = cur->next;
 
-            pthread_mutex_unlock(&cur->sync);
-            pthread_mutex_unlock(&tmp->sync);
+            pthread_rwlock_unlock(&cur->sync);
+            pthread_rwlock_unlock(&tmp->sync);
         }
         stats.eq_iters++;
+        stats.eq_string_count = 0;
     }
 }
 
@@ -176,37 +179,37 @@ void swapper1(Storage* storage) {
             if (prev == NULL) {
                 break;
             }
-            pthread_mutex_lock(&prev->sync);
+            pthread_rwlock_wrlock(&prev->sync);
 
             if (rand() % 3 == 0) {
 
                 if (prev->next == NULL) {
-                    pthread_mutex_unlock(&prev->sync);
+                    pthread_rwlock_unlock(&prev->sync);
                     break;
                 }
                 cur = prev->next;
 
-                pthread_mutex_lock(&cur->sync);
+                pthread_rwlock_wrlock(&cur->sync);
                 if (cur->next == NULL) {
-                    pthread_mutex_unlock(&prev->sync);
-                    pthread_mutex_unlock(&cur->sync);
+                    pthread_rwlock_unlock(&prev->sync);
+                    pthread_rwlock_unlock(&cur->sync);
                     break;
                 }
                 next = cur->next;
 
-                pthread_mutex_lock(&next->sync);
+                pthread_rwlock_wrlock(&next->sync);
 
                 prev->next = next;
                 cur->next = next->next;
                 next->next = cur;
                 stats.swaps1++;
 
-                pthread_mutex_unlock(&next->sync);
-                pthread_mutex_unlock(&cur->sync);
+                pthread_rwlock_unlock(&next->sync);
+                pthread_rwlock_unlock(&cur->sync);
             }
             tmp = prev;
             prev = prev->next;
-            pthread_mutex_unlock(&tmp->sync);
+            pthread_rwlock_unlock(&tmp->sync);
         }
     }
 }
@@ -225,37 +228,37 @@ void swapper2(Storage* storage) {
             if (prev == NULL) {
                 break;
             }
-            pthread_mutex_lock(&prev->sync);
+            pthread_rwlock_wrlock(&prev->sync);
 
             if (rand() % 3 == 0) {
 
                 if (prev->next == NULL) {
-                    pthread_mutex_unlock(&prev->sync);
+                    pthread_rwlock_unlock(&prev->sync);
                     break;
                 }
                 cur = prev->next;
 
-                pthread_mutex_lock(&cur->sync);
+                pthread_rwlock_wrlock(&cur->sync);
                 if (cur->next == NULL) {
-                    pthread_mutex_unlock(&prev->sync);
-                    pthread_mutex_unlock(&cur->sync);
+                    pthread_rwlock_unlock(&prev->sync);
+                    pthread_rwlock_unlock(&cur->sync);
                     break;
                 }
                 next = cur->next;
 
-                pthread_mutex_lock(&next->sync);
+                pthread_rwlock_wrlock(&next->sync);
 
                 prev->next = next;
                 cur->next = next->next;
                 next->next = cur;
                 stats.swaps2++;
 
-                pthread_mutex_unlock(&next->sync);
-                pthread_mutex_unlock(&cur->sync);
+                pthread_rwlock_unlock(&next->sync);
+                pthread_rwlock_unlock(&cur->sync);
             }
             tmp = prev;
             prev = prev->next;
-            pthread_mutex_unlock(&tmp->sync);
+            pthread_rwlock_unlock(&tmp->sync);
         }
     }
 }
@@ -274,37 +277,37 @@ void swapper3(Storage* storage) {
             if (prev == NULL) {
                 break;
             }
-            pthread_mutex_lock(&prev->sync);
+            pthread_rwlock_wrlock(&prev->sync);
 
             if (rand() % 3 == 0) {
 
                 if (prev->next == NULL) {
-                    pthread_mutex_unlock(&prev->sync);
+                    pthread_rwlock_unlock(&prev->sync);
                     break;
                 }
                 cur = prev->next;
 
-                pthread_mutex_lock(&cur->sync);
+                pthread_rwlock_wrlock(&cur->sync);
                 if (cur->next == NULL) {
-                    pthread_mutex_unlock(&prev->sync);
-                    pthread_mutex_unlock(&cur->sync);
+                    pthread_rwlock_unlock(&prev->sync);
+                    pthread_rwlock_unlock(&cur->sync);
                     break;
                 }
                 next = cur->next;
 
-                pthread_mutex_lock(&next->sync);
+                pthread_rwlock_wrlock(&next->sync);
 
                 prev->next = next;
                 cur->next = next->next;
                 next->next = cur;
                 stats.swaps3++;
 
-                pthread_mutex_unlock(&next->sync);
-                pthread_mutex_unlock(&cur->sync);
+                pthread_rwlock_unlock(&next->sync);
+                pthread_rwlock_unlock(&cur->sync);
             }
             tmp = prev;
             prev = prev->next;
-            pthread_mutex_unlock(&tmp->sync);
+            pthread_rwlock_unlock(&tmp->sync);
         }
     }
 }

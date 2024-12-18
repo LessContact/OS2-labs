@@ -94,11 +94,11 @@ void queue_destroy(queue_t *q) {
 
 
 int queue_add(queue_t *q, int val) {
-	q->add_attempts++;
 	pthread_mutex_lock(&mutex);
 	while (q->count == q->max_count) {
 		pthread_cond_wait(&cond_not_full, &mutex);
 	}
+	q->add_attempts++;
 
 	qnode_t *new = malloc(sizeof(qnode_t));
 	if (!new) {
@@ -125,11 +125,11 @@ int queue_add(queue_t *q, int val) {
 }
 
 int queue_get(queue_t *q, int *val) {
-	q->get_attempts++;
 	pthread_mutex_lock(&mutex);
-	while (q->count == 0) {
+	while (q->count == 0) { //todo why can it wake up spuriously
 		pthread_cond_wait(&cond_not_empty, &mutex);
 	}
+	q->get_attempts++;
 
 	qnode_t *tmp = q->first;
 

@@ -16,7 +16,7 @@
 
 #include "storage.h"
 
-#define STORAGE_SIZE 100000
+#define STORAGE_SIZE 100
 
 #define CPU_Asc 1
 #define CPU_Desc 2
@@ -108,8 +108,11 @@ void count_asc(Storage* storage) {
 
             pthread_mutex_unlock(&cur->sync);
             pthread_mutex_unlock(&tmp->sync);
+
+            //===================
         }
         stats.asc_iters++;
+        stats.asc_string_count = 0;
     }
 }
 
@@ -139,6 +142,7 @@ void count_desc(Storage* storage) {
             pthread_mutex_unlock(&tmp->sync);
         }
         stats.desc_iters++;
+        stats.desc_string_count = 0;
     }
 }
 
@@ -168,6 +172,7 @@ void count_eq(Storage* storage) {
             pthread_mutex_unlock(&tmp->sync);
         }
         stats.eq_iters++;
+        stats.eq_string_count = 0;
     }
 }
 

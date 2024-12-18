@@ -4,7 +4,7 @@
 #include <ucontext.h>
 
 #define PAGE 4096
-#define STACK_SIZE (PAGE * 5)
+#define STACK_SIZE (PAGE * 8)
 #define MAX_THREADS 10
 
 typedef struct {

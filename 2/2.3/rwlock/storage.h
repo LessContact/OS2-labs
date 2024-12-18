@@ -6,7 +6,7 @@
 typedef struct _Node {
     char value[100];
     struct _Node* next;
-    pthread_mutex_t sync;
+    pthread_rwlock_t sync;
 } Node;
 
 typedef struct _Storage {

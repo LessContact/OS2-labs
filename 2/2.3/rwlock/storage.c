@@ -3,9 +3,9 @@
 
 #include <stdlib.h>
 
-pthread_mutex_t create_lock() {
-    pthread_mutex_t lock;
-    pthread_mutex_init(&lock, NULL);
+pthread_rwlock_t create_lock() {
+    pthread_rwlock_t lock;
+    pthread_rwlock_init(&lock, NULL);
     return lock;
 }
 

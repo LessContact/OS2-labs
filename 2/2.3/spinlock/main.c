@@ -101,6 +101,7 @@ void count_asc(Storage* storage) {
             pthread_spin_unlock(&tmp->sync);
         }
         stats.asc_iters++;
+        stats.asc_string_count = 0;
     }
 }
 
@@ -130,6 +131,7 @@ void count_desc(Storage* storage) {
             pthread_spin_unlock(&tmp->sync);
         }
         stats.desc_iters++;
+        stats.desc_string_count = 0;
     }
 }
 
@@ -159,6 +161,7 @@ void count_eq(Storage* storage) {
             pthread_spin_unlock(&tmp->sync);
         }
         stats.eq_iters++;
+        stats.eq_string_count = 0;
     }
 }
 
