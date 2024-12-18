@@ -13,7 +13,7 @@ typedef struct {
     void             *arg;
     void             *retval;
 
-    volatile int     finished;
+    volatile int     is_finished;
     ucontext_t       uctx;
 } uthread_struct_t;
 
@@ -27,9 +27,9 @@ typedef struct {
 
 
 int uthread_create(uthread_t *uthread, uthread_manager_t *uthread_manager, void (*thread_func), void *arg);
-void uthread_sheduler(uthread_manager_t *uthread_manager);
-int thread_is_finished(uthread_t utid);
+void uschedule(uthread_manager_t *uthread_manager);
+int is_thread_finished(uthread_t utid);
 void uthread_manager_init(uthread_manager_t** uthread_manager, uthread_t* main_thread);
-void uthread_manager_shutdown(uthread_manager_t** uthread_manager);
+void uthread_manager_destroy(uthread_manager_t** uthread_manager);
 
 #endif

@@ -7,7 +7,7 @@
 
 #define THREADS 5
 
-// test scheme: [t1 - main thread, t2, t3 - dies, t4, t5]
+// test scheme: [t1 - main thread, t2, t3 - returns, t4, t5]
 
 void threadFunc(void *arg, uthread_manager_t *uthread_manager) {
     int threadIndex = (int)arg;
@@ -18,11 +18,10 @@ void threadFunc(void *arg, uthread_manager_t *uthread_manager) {
 
         if(threadIndex == 2) {
             printf("thread[%d]: terminate requested..\n", threadIndex);
-            uthread_sheduler(uthread_manager);
             return;
         }
 
-        uthread_sheduler(uthread_manager);
+        uschedule(uthread_manager);
     }
 }
 
@@ -48,14 +47,14 @@ int main() {
     while (1) {
         int count = 0;
         for (int i = 1; i < THREADS; ++i) {
-            if (thread_is_finished(mythreads[i])) ++count;
+            if (is_thread_finished(mythreads[i])) ++count;
         }
         if (count == THREADS - 1) break;
 
-        uthread_sheduler(uthread_manager);
+        uschedule(uthread_manager);
     }
 
-    uthread_manager_shutdown(&uthread_manager);
+    uthread_manager_destroy(&uthread_manager);
 
     return 0;
 }

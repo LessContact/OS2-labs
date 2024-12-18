@@ -19,7 +19,7 @@ int uthread_startup(void *arg, void *uthread_manager) {
     uthread->thread_func(uthread->arg, manager);
     
     uthread->retval = retval;
-    uthread->finished = 1;
+    uthread->is_finished = 1;
 
     return 0;
 }
@@ -34,25 +34,21 @@ void *create_stack(off_t size) {
     return stack;
 }
 
-void uthread_sheduler(uthread_manager_t *uthread_manager) {
+void uschedule(uthread_manager_t *uthread_manager) {
     if(uthread_manager->uthread_count <= 1) return;
     
     int err;
     ucontext_t *cur_ctx, *next_ctx;
-    
+
     cur_ctx = &(uthread_manager->uthreads[uthread_manager->uthread_cur]->uctx);
 
     do{
       uthread_manager->uthread_cur = (uthread_manager->uthread_cur + 1) % uthread_manager->uthread_count;
       next_ctx = &(uthread_manager->uthreads[uthread_manager->uthread_cur]->uctx);
-    } while(uthread_manager->uthreads[uthread_manager->uthread_cur] == NULL || 
-          uthread_manager->uthreads[uthread_manager->uthread_cur]->finished);
+    } while(uthread_manager->uthreads[uthread_manager->uthread_cur] == NULL ||
+            uthread_manager->uthreads[uthread_manager->uthread_cur]->is_finished);
     
     if (cur_ctx == next_ctx) return;
-
-    // cur_ctx = &(uthread_manager->uthreads[uthread_manager->uthread_cur]->uctx);
-    // uthread_manager->uthread_cur = (uthread_manager->uthread_cur + 1) % uthread_manager->uthread_count;
-    // next_ctx = &(uthread_manager->uthreads[uthread_manager->uthread_cur]->uctx);
 
     err = swapcontext(cur_ctx, next_ctx);
     if (err == -1) {
@@ -88,7 +84,7 @@ int uthread_create(uthread_t *uthread, uthread_manager_t *uthread_manager, void 
     new_uthread->uthread_id = uthread_manager->uthread_count + 1;
     new_uthread->thread_func = thread_func;
     new_uthread->arg = arg;
-    new_uthread->finished = 0;
+    new_uthread->is_finished = 0;
 
     uthread_manager->uthreads[uthread_manager->uthread_count++] = new_uthread;
     printf("uthread_create: creating thread %d\n", new_uthread->uthread_id);
@@ -98,11 +94,11 @@ int uthread_create(uthread_t *uthread, uthread_manager_t *uthread_manager, void 
     return 0;
 }
 
-int thread_is_finished(uthread_t utid) {
-    return utid->finished;
+int is_thread_finished(uthread_t utid) {
+    return utid->is_finished;
 }
 
-void uthread_manager_shutdown(uthread_manager_t** uthread_manager)
+void uthread_manager_destroy(uthread_manager_t** uthread_manager)
 {
   for(unsigned i = 0; i < (*uthread_manager)->uthread_count; ++i)
   {
