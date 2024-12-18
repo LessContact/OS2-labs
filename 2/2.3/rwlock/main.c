@@ -13,7 +13,7 @@
 #include "storage.h"
 #include <threads.h>
 
-#define STORAGE_SIZE 100000
+#define STORAGE_SIZE 100
 
 #define CPU_Asc 1
 #define CPU_Desc 2
@@ -75,6 +75,7 @@ void print_stats() {
         stats.desc_string_count, stats.eq_string_count);
 }
 
+
 void count_asc(Storage* storage) {
     set_cpu(CPU_Asc);
     while (1) {
@@ -82,13 +83,12 @@ void count_asc(Storage* storage) {
         Node* next;
         Node* tmp;
 
-        while (cur != NULL) {
-            pthread_rwlock_rdlock(&cur->sync);
+        pthread_rwlock_rdlock(&cur->sync);
+        while (1) {
             tmp = cur;
 
             next = cur->next;
             if (next == NULL) {
-                pthread_rwlock_unlock(&cur->sync);
                 break;
             }
             pthread_rwlock_rdlock(&next->sync);
@@ -97,11 +97,12 @@ void count_asc(Storage* storage) {
 
             cur = cur->next;
 
-            pthread_rwlock_unlock(&cur->sync);
             pthread_rwlock_unlock(&tmp->sync);
         }
+        pthread_rwlock_unlock(&cur->sync);
         stats.asc_iters++;
-        stats.asc_string_count = 0;
+
+        // stats.asc_string_count = 0;
     }
 }
 
@@ -111,14 +112,12 @@ void count_desc(Storage* storage) {
         Node* cur = storage->first;
         Node* next;
         Node* tmp;
-
+        pthread_rwlock_rdlock(&cur->sync);
         while (cur != NULL) {
-            pthread_rwlock_rdlock(&cur->sync);
             tmp = cur;
 
             next = cur->next;
             if (next == NULL) {
-                pthread_rwlock_unlock(&cur->sync);
                 break;
             }
             pthread_rwlock_rdlock(&next->sync);
@@ -127,11 +126,12 @@ void count_desc(Storage* storage) {
 
             cur = cur->next;
 
-            pthread_rwlock_unlock(&cur->sync);
             pthread_rwlock_unlock(&tmp->sync);
         }
+        pthread_rwlock_unlock(&cur->sync);
         stats.desc_iters++;
-        stats.desc_string_count = 0;
+
+        // stats.desc_string_count = 0;
     }
 }
 
@@ -141,14 +141,12 @@ void count_eq(Storage* storage) {
         Node* cur = storage->first;
         Node* next;
         Node* tmp;
-
+        pthread_rwlock_rdlock(&cur->sync);
         while (cur != NULL) {
-            pthread_rwlock_rdlock(&cur->sync);
             tmp = cur;
 
             next = cur->next;
             if (next == NULL) {
-                pthread_rwlock_unlock(&cur->sync);
                 break;
             }
             pthread_rwlock_rdlock(&next->sync);
@@ -157,11 +155,12 @@ void count_eq(Storage* storage) {
 
             cur = cur->next;
 
-            pthread_rwlock_unlock(&cur->sync);
             pthread_rwlock_unlock(&tmp->sync);
         }
+        pthread_rwlock_unlock(&cur->sync);
         stats.eq_iters++;
-        stats.eq_string_count = 0;
+
+        // stats.eq_string_count = 0;
     }
 }
 
@@ -175,42 +174,34 @@ void swapper1(Storage* storage) {
         if (prev == NULL) {
             continue;
         }
+        pthread_rwlock_wrlock(&prev->sync);
         while (1) {
-            if (prev == NULL) {
+            if (prev->next == NULL) {
+               break;
+            }
+            cur = prev->next;
+            pthread_rwlock_wrlock(&cur->sync);
+            if (cur->next == NULL) {
+                pthread_rwlock_unlock(&cur->sync);
                 break;
             }
-            pthread_rwlock_wrlock(&prev->sync);
+            next = cur->next;
+
+            pthread_rwlock_wrlock(&next->sync);
 
             if (rand() % 3 == 0) {
-
-                if (prev->next == NULL) {
-                    pthread_rwlock_unlock(&prev->sync);
-                    break;
-                }
-                cur = prev->next;
-
-                pthread_rwlock_wrlock(&cur->sync);
-                if (cur->next == NULL) {
-                    pthread_rwlock_unlock(&prev->sync);
-                    pthread_rwlock_unlock(&cur->sync);
-                    break;
-                }
-                next = cur->next;
-
-                pthread_rwlock_wrlock(&next->sync);
-
                 prev->next = next;
                 cur->next = next->next;
                 next->next = cur;
                 stats.swaps1++;
-
-                pthread_rwlock_unlock(&next->sync);
-                pthread_rwlock_unlock(&cur->sync);
             }
+
             tmp = prev;
-            prev = prev->next;
+            pthread_rwlock_unlock(&next->sync);
             pthread_rwlock_unlock(&tmp->sync);
+            prev = cur;
         }
+        pthread_rwlock_unlock(&prev->sync);
     }
 }
 
@@ -224,42 +215,34 @@ void swapper2(Storage* storage) {
         if (prev == NULL) {
             continue;
         }
+        pthread_rwlock_wrlock(&prev->sync);
         while (1) {
-            if (prev == NULL) {
+            if (prev->next == NULL) {
                 break;
             }
-            pthread_rwlock_wrlock(&prev->sync);
+            cur = prev->next;
+            pthread_rwlock_wrlock(&cur->sync);
+            if (cur->next == NULL) {
+                pthread_rwlock_unlock(&cur->sync);
+                break;
+            }
+            next = cur->next;
+
+            pthread_rwlock_wrlock(&next->sync);
 
             if (rand() % 3 == 0) {
-
-                if (prev->next == NULL) {
-                    pthread_rwlock_unlock(&prev->sync);
-                    break;
-                }
-                cur = prev->next;
-
-                pthread_rwlock_wrlock(&cur->sync);
-                if (cur->next == NULL) {
-                    pthread_rwlock_unlock(&prev->sync);
-                    pthread_rwlock_unlock(&cur->sync);
-                    break;
-                }
-                next = cur->next;
-
-                pthread_rwlock_wrlock(&next->sync);
-
                 prev->next = next;
                 cur->next = next->next;
                 next->next = cur;
                 stats.swaps2++;
-
-                pthread_rwlock_unlock(&next->sync);
-                pthread_rwlock_unlock(&cur->sync);
             }
+
             tmp = prev;
-            prev = prev->next;
+            pthread_rwlock_unlock(&next->sync);
             pthread_rwlock_unlock(&tmp->sync);
+            prev = cur;
         }
+        pthread_rwlock_unlock(&prev->sync);
     }
 }
 
@@ -273,42 +256,34 @@ void swapper3(Storage* storage) {
         if (prev == NULL) {
             continue;
         }
+        pthread_rwlock_wrlock(&prev->sync);
         while (1) {
-            if (prev == NULL) {
+            if (prev->next == NULL) {
                 break;
             }
-            pthread_rwlock_wrlock(&prev->sync);
+            cur = prev->next;
+            pthread_rwlock_wrlock(&cur->sync);
+            if (cur->next == NULL) {
+                pthread_rwlock_unlock(&cur->sync);
+                break;
+            }
+            next = cur->next;
+
+            pthread_rwlock_wrlock(&next->sync);
 
             if (rand() % 3 == 0) {
-
-                if (prev->next == NULL) {
-                    pthread_rwlock_unlock(&prev->sync);
-                    break;
-                }
-                cur = prev->next;
-
-                pthread_rwlock_wrlock(&cur->sync);
-                if (cur->next == NULL) {
-                    pthread_rwlock_unlock(&prev->sync);
-                    pthread_rwlock_unlock(&cur->sync);
-                    break;
-                }
-                next = cur->next;
-
-                pthread_rwlock_wrlock(&next->sync);
-
                 prev->next = next;
                 cur->next = next->next;
                 next->next = cur;
                 stats.swaps3++;
-
-                pthread_rwlock_unlock(&next->sync);
-                pthread_rwlock_unlock(&cur->sync);
             }
+
             tmp = prev;
-            prev = prev->next;
+            pthread_rwlock_unlock(&next->sync);
             pthread_rwlock_unlock(&tmp->sync);
+            prev = cur;
         }
+        pthread_rwlock_unlock(&prev->sync);
     }
 }
 
