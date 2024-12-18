@@ -25,11 +25,14 @@
 #define CPU_Swap2 5
 #define CPU_Swap3 6
 
+#define STATS_PER_ITER
 // int rand() {
 //     uint64_t val;
 //     asm volatile ("rdrand %0" : "=r" (val));
 //     return val;
 // }
+
+pthread_barrier_t barrier;
 
 int thread_local rng_state = 0xDEADBEEF;
 
@@ -91,27 +94,32 @@ void count_asc(Storage* storage) {
         Node* next;
         Node* tmp;
 
-        while (cur != NULL) {
-            pthread_mutex_lock(&cur->sync);
+        pthread_mutex_lock(&cur->sync);
+        while (1) {
             tmp = cur;
 
             next = cur->next;
             if (next == NULL) {
-                pthread_mutex_unlock(&cur->sync);
                 break;
             }
             pthread_mutex_lock(&next->sync);
+
+            if (cur->next != next) {
+                pthread_mutex_unlock(&next->sync);
+                continue;
+            }
 
             if (strlen(cur->value) < strlen(next->value)) stats.asc_string_count++;
 
             cur = cur->next;
 
-            pthread_mutex_unlock(&cur->sync);
             pthread_mutex_unlock(&tmp->sync);
 
             //===================
         }
+        pthread_mutex_unlock(&cur->sync);
         stats.asc_iters++;
+
         stats.asc_string_count = 0;
     }
 }
@@ -122,26 +130,35 @@ void count_desc(Storage* storage) {
         Node* cur = storage->first;
         Node* next;
         Node* tmp;
-
+        pthread_mutex_lock(&cur->sync);
         while (cur != NULL) {
-            pthread_mutex_lock(&cur->sync);
+
             tmp = cur;
 
             next = cur->next;
             if (next == NULL) {
-                pthread_mutex_unlock(&cur->sync);
+                // pthread_mutex_unlock(&cur->sync);
                 break;
             }
             pthread_mutex_lock(&next->sync);
+
+            if (cur->next != next) {
+                pthread_mutex_unlock(&next->sync);
+                continue;
+            }
 
             if (strlen(cur->value) > strlen(next->value)) stats.desc_string_count++;
 
             cur = cur->next;
 
-            pthread_mutex_unlock(&cur->sync);
+
             pthread_mutex_unlock(&tmp->sync);
         }
+        pthread_mutex_unlock(&cur->sync);
         stats.desc_iters++;
+        pthread_barrier_wait(&barrier);
+        printf("desc_iter: %zu, count_desc: %zu\n", stats.desc_iters, stats.desc_string_count);
+        pthread_barrier_wait(&barrier);
         stats.desc_string_count = 0;
     }
 }
@@ -152,26 +169,35 @@ void count_eq(Storage* storage) {
         Node* cur = storage->first;
         Node* next;
         Node* tmp;
-
+        pthread_mutex_lock(&cur->sync);
         while (cur != NULL) {
-            pthread_mutex_lock(&cur->sync);
+
             tmp = cur;
 
             next = cur->next;
             if (next == NULL) {
-                pthread_mutex_unlock(&cur->sync);
+                // pthread_mutex_unlock(&cur->sync);
                 break;
             }
             pthread_mutex_lock(&next->sync);
+
+            if (cur->next != next) {
+                pthread_mutex_unlock(&next->sync);
+                continue;
+            }
 
             if (strlen(cur->value) == strlen(next->value)) stats.eq_string_count++;
 
             cur = cur->next;
 
-            pthread_mutex_unlock(&cur->sync);
             pthread_mutex_unlock(&tmp->sync);
         }
+
+        pthread_mutex_unlock(&cur->sync);
         stats.eq_iters++;
+        pthread_barrier_wait(&barrier);
+        printf("eq_iter: %zu, count_eq: %zu\n", stats.eq_iters, stats.eq_string_count);
+        pthread_barrier_wait(&barrier);
         stats.eq_string_count = 0;
     }
 }
@@ -324,6 +350,10 @@ void swapper3(Storage* storage) {
 }
 
 int main(int argc, char **argv) {
+    if (pthread_barrier_init(&barrier, NULL, 3)) {
+        perror("pthread_barrier_init");
+        return 1;
+    }
     Storage storage = init_storage(STORAGE_SIZE);
 
     pthread_t asc_thread, desc_thread, eq_thread;
