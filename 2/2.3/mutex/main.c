@@ -44,6 +44,8 @@ int rand() {
     return x;
 }
 
+_Atomic int comp_count = 0;
+
 typedef struct stats {
     size_t asc_iters;
     size_t desc_iters;
@@ -78,10 +80,10 @@ void set_cpu(int n) {
 }
 
 void print_stats() {
-    printf("iters: %zu | %zu | %zu ||| swaps: %zu | %zu | %zu ||| seq strings found: %zu | %zu | %zu\n",
+    printf("iters: %zu | %zu | %zu ||| swaps: %zu | %zu | %zu ||| seq strings found: %zu | %zu | %zu ||| comps: %d\n",
         stats.asc_iters, stats.desc_iters, stats.eq_iters, stats.swaps1,
         stats.swaps2, stats.swaps3, stats.asc_string_count,
-        stats.desc_string_count, stats.eq_string_count);
+        stats.desc_string_count, stats.eq_string_count, comp_count);
 }
 
 void count_asc(Storage* storage) {
@@ -102,6 +104,7 @@ void count_asc(Storage* storage) {
             pthread_mutex_lock(&next->sync);
 
             if (strlen(cur->value) < strlen(next->value)) stats.asc_string_count++;
+            comp_count++;
 
             cur = cur->next;
 
@@ -131,6 +134,7 @@ void count_desc(Storage* storage) {
             pthread_mutex_lock(&next->sync);
 
             if (strlen(cur->value) > strlen(next->value)) stats.desc_string_count++;
+            comp_count++;
 
             cur = cur->next;
 
@@ -160,6 +164,7 @@ void count_eq(Storage* storage) {
             pthread_mutex_lock(&next->sync);
 
             if (strlen(cur->value) == strlen(next->value)) stats.eq_string_count++;
+        comp_count++;
 
             cur = cur->next;
 
@@ -167,7 +172,6 @@ void count_eq(Storage* storage) {
         }
         pthread_mutex_unlock(&cur->sync);
         stats.eq_iters++;
-
         // stats.eq_string_count = 0;
     }
 }

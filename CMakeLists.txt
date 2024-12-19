@@ -46,4 +46,7 @@ add_executable(list-mutex 2/2.3/mutex/storage.c 2/2.3/mutex/main.c)
 add_executable(list-spin 2/2.3/spinlock/storage.c 2/2.3/spinlock/main.c)
 add_executable(list-rwl 2/2.3/rwlock/storage.c 2/2.3/rwlock/main.c)
 
+add_executable(spinlock 2/2.4/speen.c)
+add_executable(mutex 2/2.4/mutex.c)
 
+add_subdirectory(http-proxy)

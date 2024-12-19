@@ -7,17 +7,15 @@
 
 #define THREADS 5
 
-// test scheme: [t1 - main thread, t2, t3 - returns, t4, t5]
-
 void threadFunc(void *arg, uthread_manager_t *uthread_manager) {
     int threadIndex = (int)arg;
 
     for (int i = 0; i < 3; ++i) {
-        printf("thread[%d]: hi from iteration = %d\n", threadIndex, i);
+        printf("thread[%d]: iteration = %d\n", threadIndex, i);
         sleep(1);
 
         if(threadIndex == 2) {
-            printf("thread[%d]: terminate requested..\n", threadIndex);
+            printf("thread[%d]: exiting...\n", threadIndex);
             return;
         }
 
