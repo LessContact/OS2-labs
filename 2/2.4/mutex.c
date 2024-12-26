@@ -14,9 +14,10 @@
 
 #include <linux/futex.h>
 
-#define COUNT_ITERATION 10000000
+#define COUNT_ITERATION 100000
 
 int counter = 0;
+mutex_t m;
 
 void set_cpu(int n) {
 	int err;
@@ -71,7 +72,7 @@ void mutex_unlock(mutex_t *m) {
 }
 
 void* thread1(void* args) {
-    set_cpu(2);
+    // set_cpu(2);
     mutex_t* m = (mutex_t*) args;
     assert(m != NULL);
 
@@ -84,47 +85,42 @@ void* thread1(void* args) {
     return NULL;
 }
 
-void* thread2(void* args) {
-    set_cpu(1);
-    mutex_t* m = (mutex_t*) args;
-    assert(m != NULL);
-
-    for(int i = 0; i < COUNT_ITERATION; ++i) {
-        mutex_lock(m);
-        ++counter;
-        mutex_unlock(m);
-    }
-    return NULL;
-}
+// void* thread2(void* args) {
+//     set_cpu(1);
+//     mutex_t* m = (mutex_t*) args;
+//     assert(m != NULL);
+//
+//     for(int i = 0; i < COUNT_ITERATION; ++i) {
+//         mutex_lock(m);
+//         ++counter;
+//         mutex_unlock(m);
+//     }
+//     return NULL;
+// }
 
 int main() {
-    mutex_t m;
 
     mutex_init(&m);
 
-    pthread_t tid1, tid2;
-    int err = pthread_create(&tid1, NULL, thread1, &m);
-	if (err) {
-        printf("main: pthread_create(): thread_1 failed: %s\n", strerror(err));
-        return EXIT_FAILURE;
+    int n = 100;
+    pthread_t threads[n];
+    int thread_args[n];
+
+    for (int i = 0; i < n; ++i) {
+        thread_args[i] = i; // Номер потока
+        int err = pthread_create(&threads[i], NULL, thread1, &m);
+        if (err) {
+            printf("main: pthread_create() failed for thread %d: %s\n", i, strerror(err));
+            return 1;
+        }
     }
 
-    err = pthread_create(&tid2, NULL, thread2, &m);
-	if (err) {
-		printf("main: pthread_create(): thread_2 failed: %s\n", strerror(err));
-        pthread_join(tid1, NULL);
-		return EXIT_FAILURE;
-	}
-
-    int err1 = pthread_join(tid1, NULL);
-    if (err1) {
-        printf("main: pthread_join() failed: %s\n", strerror(err1));
-        return EXIT_FAILURE;
-    }
-    err1 = pthread_join(tid2, NULL);
-    if (err1) {
-        printf("main: pthread_join() failed: %s\n", strerror(err1));
-        return EXIT_FAILURE;
+    for (int i = 0; i < n; ++i) {
+        int err = pthread_join(threads[i], NULL);
+        if (err) {
+            printf("main: pthread_join() failed for thread %d: %s\n", i, strerror(err));
+            return 1;
+        }
     }
 
     printf("counter %d", counter);

@@ -72,7 +72,6 @@ queue_t* queue_init(int max_count) {
 }
 
 void queue_destroy(queue_t *q) {
-	// TODO: It's needed to implement this function
 	pthread_cancel(q->qmonitor_tid);
 	void* ret_val;
 	int err = pthread_join(q->qmonitor_tid, &ret_val);
@@ -126,7 +125,7 @@ int queue_add(queue_t *q, int val) {
 
 int queue_get(queue_t *q, int *val) {
 	pthread_mutex_lock(&mutex);
-	while (q->count == 0) { //todo why can it wake up spuriously
+	while (q->count == 0) {
 		pthread_cond_wait(&cond_not_empty, &mutex);
 	}
 	q->get_attempts++;

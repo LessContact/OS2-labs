@@ -44,7 +44,6 @@ queue_t* queue_init(int max_count) {
 }
 
 void queue_destroy(queue_t *q) {
-	// TODO: It's needed to implement this function
 	pthread_cancel(q->qmonitor_tid);
 	void* ret_val;
 	int err = pthread_join(q->qmonitor_tid, &ret_val);

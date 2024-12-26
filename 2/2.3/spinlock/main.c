@@ -13,7 +13,7 @@
 #include "storage.h"
 #include <threads.h>
 
-#define STORAGE_SIZE 100
+#define STORAGE_SIZE 10
 
 #define CPU_Asc 1
 #define CPU_Desc 2
@@ -326,6 +326,7 @@ int main(int argc, char **argv) {
     }
 
     set_cpu(0);
+    int i = 0;
     while (1) {
         sleep(1);
         print_stats();
