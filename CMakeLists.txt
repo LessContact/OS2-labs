@@ -49,4 +49,4 @@ add_executable(list-rwl 2/2.3/rwlock/storage.c 2/2.3/rwlock/main.c)
 add_executable(spinlock 2/2.4/speen.c)
 add_executable(mutex 2/2.4/mutex.c)
 
-add_subdirectory(http-proxy)
+add_subdirectory(caching_http_proxy)
