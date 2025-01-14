@@ -7,6 +7,7 @@
 #include <string.h>
 #include <unistd.h>
 #include "../proxy/proxy.h"
+#include "../third_party/log.h"
 
 static void *client_worker_main(void *arg) {
     worker_data_t *worker = (worker_data_t *)arg;
@@ -31,15 +32,14 @@ static void *client_worker_main(void *arg) {
         nfds_t nfds_local = worker->nfds;
 
         for (int i = 0; i < nfds_local; i++) {
-            fds_local[i]       = worker->fds[i];
-            conn_local[i]      = worker->connections[i];
+            fds_local[i] = worker->fds[i];
+            conn_local[i] = worker->connections[i];
         }
         pthread_mutex_unlock(&worker->lock);
 
-        // Poll for up to 500ms
         int ret = poll(fds_local, nfds_local, 500);
         if (ret < 0) {
-            fprintf(stderr, "poll() error: %s\n", strerror(errno));
+            log_error("poll() error: %s\n", strerror(errno));
             continue;
         }
         else if (ret == 0) {
@@ -49,18 +49,29 @@ static void *client_worker_main(void *arg) {
 
         // Process each readable socket
         for (int i = 0; i < nfds_local; i++) {
-            if (fds_local[i].revents & (POLLERR | POLLHUP | POLLNVAL)) {
+            if (fds_local[i].revents & (POLLERR | POLLNVAL)) {
                 // Mark the socket as closed
                 conn_local[i]->sock_fd = -1;
             } else if (fds_local[i].revents & POLLIN) {
-                // Call your existing process_request logic
                 process_request(conn_local[i]);
+            }
+            else if (fds_local[i].revents & POLLHUP) {
+                /*
+                this is like this beacuse:
+                POLLHUP
+                Hang up (only returned in revents; ignored in events).  Note that when reading from a channel such as a pipe or  a  stream
+                socket,  this  event merely indicates that the peer closed its end of the channel.  Subsequent reads from the channel will
+                return 0 (end of file) only after all outstanding data in the channel has been consumed.
+                */
+                // Mark as closed
+                conn_local[i]->sock_fd = -1;
             }
         }
 
         // Clean up closed connections
         pthread_mutex_lock(&worker->lock);
         for (int i = 0; i < nfds_local; i++) {
+            // sync the fds
             worker->fds[i] = fds_local[i];
             worker->connections[i] = conn_local[i];
         }
@@ -86,6 +97,9 @@ static void *client_worker_main(void *arg) {
 static worker_data_t *pick_worker(threadpool_t *tp) {
     worker_data_t *best = NULL;
     uint32_t min_load = UINT_MAX;
+
+    // it may be a good idea to track if all available workers are busy
+    // via a flag or smth before trying to find the one with the least clients
 
     for (int i = 0; i < MAX_WORKER_THREADS; i++) {
         worker_data_t *w = &tp->worker_data[i];
@@ -121,7 +135,7 @@ static int add_client_to_worker(worker_data_t *worker, int client_fd, http_cache
         return -1;
     }
     conn->sock_fd = client_fd;
-    conn->cache   = cache;
+    conn->cache = cache;
 
     worker->connections[idx] = conn;
 
@@ -155,7 +169,7 @@ threadpool_t *threadpool_init() {
     // tp->worker_threads = calloc(MAX_WORKER_THREADS, sizeof(pthread_t));
 
     if (!tp->worker_data) {
-        fprintf(stderr, "Allocation error\n");
+        log_fatal("Allocation error\n");
         free(tp);
         return NULL;
     }
@@ -170,7 +184,7 @@ threadpool_t *threadpool_init() {
         tp->worker_data[i].nfds = 0;
         tp->worker_data[i].is_shutdown = 0;
         if (pthread_create(&tp->worker_threads[i], NULL, client_worker_main, &tp->worker_data[i]) != 0) {
-            fprintf(stderr, "Failed to create worker thread %d\n", i);
+            log_fatal("Failed to create worker thread %d\n", i);
             perror("pthread_create");
             abort();
         }
