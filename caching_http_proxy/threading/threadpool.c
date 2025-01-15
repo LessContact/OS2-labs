@@ -9,7 +9,7 @@
 #include "../proxy/proxy.h"
 #include "../third_party/log.h"
 
-static void *client_worker_main(void *arg) {
+void *client_worker_main(void *arg) {
     worker_data_t *worker = (worker_data_t *)arg;
 
     while (1) {
@@ -98,8 +98,7 @@ static worker_data_t *pick_worker(threadpool_t *tp) {
     worker_data_t *best = NULL;
     uint32_t min_load = UINT_MAX;
 
-    // it may be a good idea to track if all available workers are busy
-    // via a flag or smth before trying to find the one with the least clients
+    // todo: this is bad because it causes starvation if all requests are done sequentially!!!!
 
     for (int i = 0; i < MAX_WORKER_THREADS; i++) {
         worker_data_t *w = &tp->worker_data[i];
@@ -161,32 +160,37 @@ int threadpool_add_client(threadpool_t *tp, int client_fd, http_cache_t *cache) 
     return ret;
 }
 
-threadpool_t *threadpool_init() {
+threadpool_t *threadpool_init(void *(*worker_function)(void *)) {
+    if (!worker_function) {
+        log_fatal("Worker function cannot be NULL\n");
+        return NULL;
+    }
+
     threadpool_t *tp = (threadpool_t *) calloc(1, sizeof(threadpool_t));
-    if (!tp) return NULL;
+    if (!tp) {
+        log_fatal("no mem");
+        return NULL;
+    }
 
     tp->worker_data = calloc(MAX_WORKER_THREADS, sizeof(worker_data_t));
-    // tp->worker_threads = calloc(MAX_WORKER_THREADS, sizeof(pthread_t));
 
     if (!tp->worker_data) {
         log_fatal("Allocation error\n");
         free(tp);
         return NULL;
     }
-    // if (pthread_cond_init(&tp->queue_worker_notify, NULL) != 0) {
-    //     free(tp);
-    //     return NULL;
-    // }
 
     for (uint32_t i = 0; i < MAX_WORKER_THREADS; i++) {
         pthread_mutex_init(&tp->worker_data[i].lock, NULL);
         pthread_cond_init(&tp->worker_data[i].worker_notify, NULL);
         tp->worker_data[i].nfds = 0;
         tp->worker_data[i].is_shutdown = 0;
-        if (pthread_create(&tp->worker_threads[i], NULL, client_worker_main, &tp->worker_data[i]) != 0) {
+        if (pthread_create(&tp->worker_threads[i], NULL, worker_function, &tp->worker_data[i]) != 0) {
             log_fatal("Failed to create worker thread %d\n", i);
             perror("pthread_create");
-            abort();
+            free(tp->worker_data);
+            free(tp);
+            return NULL;
         }
     }
 

@@ -13,14 +13,14 @@
 typedef struct _con_ctx {
     int sock_fd;
     http_cache_t *cache;
-    //int in_forwarded;
+    //int is_forwarded;
 } connection_ctx_t;
 
 typedef struct _worker_data {
     struct pollfd fds[MAX_CLIENTS_PER_THREAD];
     connection_ctx_t *connections[MAX_CLIENTS_PER_THREAD];
     nfds_t nfds;
-    uint32_t is_shutdown;
+    _Atomic uint32_t is_shutdown;
     pthread_mutex_t lock;
     pthread_cond_t worker_notify;
 } worker_data_t;
@@ -31,8 +31,9 @@ typedef struct _threadpool {
     // uint32_t is_shutdown;
 } threadpool_t;
 
-threadpool_t *threadpool_init();
+threadpool_t *threadpool_init(void *(*worker_function)(void *));
 
+void *client_worker_main(void *arg);
 // int add_client_to_worker(worker_data_t *worker, int client_fd, http_cache_t *cache);
 void threadpool_shutdown(threadpool_t **tp);
 int threadpool_add_client(threadpool_t *tp, int client_fd, http_cache_t *cache);
