@@ -51,6 +51,7 @@ void *client_worker_main(void *arg) {
         for (int i = 0; i < nfds_local; i++) {
             if (fds_local[i].revents & (POLLERR | POLLNVAL)) {
                 // Mark the socket as closed
+                close(conn_local[i]->sock_fd);
                 conn_local[i]->sock_fd = -1;
             } else if (fds_local[i].revents & POLLIN) {
                 process_request(conn_local[i]);
@@ -64,6 +65,7 @@ void *client_worker_main(void *arg) {
                 return 0 (end of file) only after all outstanding data in the channel has been consumed.
                 */
                 // Mark as closed
+                close(conn_local[i]->sock_fd);
                 conn_local[i]->sock_fd = -1;
             }
         }
@@ -107,6 +109,7 @@ static worker_data_t *pick_worker(threadpool_t *tp) {
     // Return the selected worker
     return &tp->worker_data[next_worker];
 
+    // i dont know if roundrobin is better than what i had before, but whatevs ig
 
     // worker_data_t *best = NULL;
     // uint32_t min_load = UINT_MAX;

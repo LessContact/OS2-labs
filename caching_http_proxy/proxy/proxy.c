@@ -332,12 +332,11 @@ void process_request(connection_ctx_t *conn) {
                 return;
             }
         }
-        return;
     }
 }
 
 void proxy_start(const uint16_t server_port) {
-    // log_set_level(LOG_INFO);
+    log_set_level(LOG_INFO);
 
     log_info("Started proxy on: %u", server_port);
 
