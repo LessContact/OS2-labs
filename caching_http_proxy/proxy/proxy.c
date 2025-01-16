@@ -329,7 +329,13 @@ void process_request(connection_ctx_t *conn) {
             pthread_mutex_unlock(&searchCreateMutex);
         }
 
-        size_t content_len = get_content_len(response.headers, response.numHeaders);
+        ssize_t content_len = get_content_len(response.headers, response.numHeaders);
+
+        // this is a hack really -=-=-=-=-=-
+        if (content_len <= 0) {
+            do_cache = 0;
+            pthread_mutex_unlock(&searchCreateMutex);
+        }
 
         entry = NULL;
 

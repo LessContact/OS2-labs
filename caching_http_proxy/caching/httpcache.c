@@ -154,7 +154,7 @@ cache_entry_t* cache_insert(http_cache_t *cache, const char *url, size_t expecte
     pthread_mutex_lock(&cache->size_lock);
     if (cache->current_size + expected_size > cache->max_size) {
         pthread_mutex_unlock(&cache->size_lock);
-        log_error("could no free space for new cache entry");
+        log_error("could not free space for new cache entry");
         return NULL;
     }
     cache->current_size += expected_size;  // Update size immediately if we have space
@@ -163,7 +163,7 @@ cache_entry_t* cache_insert(http_cache_t *cache, const char *url, size_t expecte
     cache_entry_t *entry = calloc(1, sizeof(cache_entry_t));
     if (!entry) {
         pthread_mutex_lock(&cache->size_lock);
-        cache->current_size -= expected_size;  // Rollback on failure
+        cache->current_size -= expected_size;  // Rollback on failure as this is less likely
         pthread_mutex_unlock(&cache->size_lock);
         log_error("could not allocate memory for cache entry");
         return NULL;
