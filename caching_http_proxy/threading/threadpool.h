@@ -5,7 +5,7 @@
 #include <stdint.h>
 #include <poll.h>
 
-#include "../caching/linkedlist.h"
+#include "../caching/httpcache.h"
 
 #define MAX_WORKER_THREADS 8
 #define MAX_CLIENTS_PER_THREAD 64
