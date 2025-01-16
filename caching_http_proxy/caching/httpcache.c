@@ -97,51 +97,6 @@ static void evict_lru_entries(http_cache_t *cache, size_t required_size) {
     }
 }
 
-// static void evict_lru_entries(http_cache_t *cache, size_t required_size) {
-//     pthread_mutex_lock(&cache->lru_lock);
-//
-//     while (cache->current_size + required_size > cache->max_size && cache->lru_tail) {
-//         cache_entry_t *to_evict = cache->lru_tail;
-//
-//         if (to_evict->refcount > 0) {
-//             if (to_evict->lru_prev == NULL) {
-//                 pthread_mutex_unlock(&cache->lru_lock);
-//                 return;
-//             }
-//             cache->lru_tail = to_evict->lru_prev;
-//             cache->lru_tail->lru_next = NULL;
-//             continue;
-//         }
-//
-//         uint32_t bucket_idx = hash_url(to_evict->url) % cache->num_buckets;
-//         pthread_mutex_lock(&cache->buckets[bucket_idx].lock);
-//
-//         // Remove from LRU list
-//         lru_remove(cache, to_evict);
-//
-//         // Remove from hash bucket
-//         cache_entry_t **pp = &cache->buckets[bucket_idx].entries;
-//         while (*pp && *pp != to_evict)
-//             pp = &(*pp)->next;
-//         if (*pp)
-//             *pp = to_evict->next;
-//
-//         pthread_mutex_lock(&cache->size_lock);
-//         cache->current_size -= to_evict->total_size;
-//         pthread_mutex_unlock(&cache->size_lock);
-//
-//         pthread_mutex_unlock(&cache->buckets[bucket_idx].lock);
-//
-//         // Free the entry
-//         pthread_mutex_destroy(&to_evict->lock);
-//         pthread_cond_destroy(&to_evict->data_ready);
-//         free(to_evict->data);
-//         free(to_evict);
-//     }
-//
-//     pthread_mutex_unlock(&cache->lru_lock);
-// }
-
 http_cache_t* http_cache_init(size_t max_size) {
     http_cache_t *cache = calloc(1, sizeof(http_cache_t));
     if (!cache) return NULL;
