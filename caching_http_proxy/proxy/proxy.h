@@ -26,7 +26,7 @@ typedef struct _response_t {
     int minorVersion;
     int status;
     const char *msg;
-    size_t msgLen;
+    size_t msg_len;
     struct phr_header headers[MAX_HEADERS];
     size_t numHeaders;
 } response_t;

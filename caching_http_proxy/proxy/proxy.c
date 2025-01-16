@@ -31,6 +31,29 @@ static struct phr_header *findHeader(struct phr_header *headers, size_t numHeade
     return NULL;
 }
 
+long long get_content_len(struct phr_header *headers, size_t numHeaders) {
+    struct phr_header *contLenHeader = findHeader(headers, numHeaders, "Content-Length");
+    if (!contLenHeader) return -1;
+
+    // char contentLength[contLenHeader->value_len + 1];
+    // memcpy(contentLength, contLenHeader->value, contLenHeader->value_len);
+    // contentLength[contLenHeader->value_len] = '\0';
+
+    char** endptr;
+    // long long ret = strtoll(contentLength, endptr, 10);
+    long long ret = strtoll(contLenHeader->value, endptr, 10);
+    if (**endptr != '\r') {
+        log_error("Invalid content length: %.*s", contLenHeader->value_len, contLenHeader->value);
+        return -1;
+    }
+    if (errno == ERANGE || errno == EINVAL) {
+        log_error("an overflow or underflow occurred in content length, or content-length is EINVAL, returning -1");
+        return -1;
+    }
+    if (ret < 0) return 0;
+    return ret;
+}
+
 // takes a string url and port number to return an open socket
 // connected to the specified host
 // the socket need to be closed manually afterwards
@@ -48,7 +71,7 @@ int resolve_and_connect(const char *url, int port) {
     snprintf(port_str, 6, "%d", port);
     int ret;
     if ((ret = getaddrinfo(url, port_str, &hints, &res)) != 0) {
-        log_error("failed to resolve host. getaddrinfo: %s\n", gai_strerror(ret));
+        log_error("failed to resolve host. getaddrinfo: %s", gai_strerror(ret));
         return -1;
     }
 
@@ -56,13 +79,13 @@ int resolve_and_connect(const char *url, int port) {
     for(rp = res; rp != NULL; rp = rp->ai_next) {
         sockfd = socket(rp->ai_family, rp->ai_socktype, rp->ai_protocol);
         if (sockfd == -1) {
-            log_error("failed to create socket: %s\n", strerror(errno));
+            log_error("failed to create socket: %s", strerror(errno));
             continue;
         }
 
         if (connect(sockfd, rp->ai_addr, rp->ai_addrlen) == -1) {
             close(sockfd);
-            log_error("failed to connect to host. connect: %s\n", strerror(errno));
+            log_error("failed to connect to host. connect: %s", strerror(errno));
             continue;
         }
         break;
@@ -71,11 +94,32 @@ int resolve_and_connect(const char *url, int port) {
     freeaddrinfo(res); // Free the linked-list
 
     if (rp == NULL) {
-        log_error("Could not connect to any address\n");
+        log_error("Could not connect to any address");
         return -1;
     }
 
     return sockfd;
+}
+
+// sends up to buflen bytes from buf to socket sockfd
+// on error or socket disconnect shuts down the socket and closes it
+size_t send_buffer(int sockfd, const void *buffer, size_t buflen) {
+    ssize_t total_sent_bytes = 0;
+    while (total_sent_bytes != buflen) {
+        ssize_t sent_bytes = send(sockfd, buffer + total_sent_bytes, buflen - total_sent_bytes, MSG_NOSIGNAL);
+        if (sent_bytes == -1) {
+            if (errno == EINTR) continue;
+            log_error("failed to pass request with: %s", strerror(errno));
+            disconnect(sockfd);
+            return -1;
+        } else if (sent_bytes == 0) {
+            log_error("??? something is seriously? wrong? with: %s", strerror(errno));
+            disconnect(sockfd);
+            return -1;
+        }
+        total_sent_bytes += sent_bytes;
+    }
+    return total_sent_bytes;
 }
 
 void process_request(connection_ctx_t *conn) {
@@ -95,11 +139,13 @@ void process_request(connection_ctx_t *conn) {
             log_error("request recv error: %s", strerror(errno));
             disconnect(client_sock_fd);
             conn->sock_fd = -1;
+            return;
         }
         if (rret == 0) {
             log_warn("client socket closed");
             disconnect(client_sock_fd);
             conn->sock_fd = -1;
+            return;
         }
 
         prevbuflen = buflen;
@@ -129,37 +175,38 @@ void process_request(connection_ctx_t *conn) {
             conn->sock_fd = -1;
         }
     }
+    // log_debug("request received and parsed: %s", buffer);
     // request is now received from client and parsed ==================================================================
 
     // Only GET/HEAD are accepted
     if (strncmp(request.method, "GET", 3) != 0 && strncmp(request.method, "HEAD", 4) != 0) {
         // todo possibly forward unsupported requests without any work
-        log_warn("Unsupported method: %s from %s\n", request.method, request.path);
+        log_warn("Unsupported method: %.*s from %.*s", request.methodLen, request.method, request.pathLen, request.path);
         disconnect(client_sock_fd);
         conn->sock_fd = -1; // Mark as closed
         return;
     }
 
     // Accept HTTP/1.0 or HTTP/1.1, ignoring keep-alive
-    if (request.minorVersion != 0 || request.minorVersion != 1) {
-        log_warn("Unsupported HTTP version: %s\n", request.minorVersion);
+    if (request.minorVersion != 0 && request.minorVersion != 1) {
+        log_warn("Unsupported HTTP version: HTTP/1.%d", request.minorVersion);
         disconnect(client_sock_fd);
         conn->sock_fd = -1; // Mark as closed
         return;
     }
 
     struct phr_header *host_header = findHeader(request.headers, request.numHeaders, "Host");
-    char *hostname = calloc(1, host_header->value_len + 1);
-    if (!hostname) {
-        log_fatal("Failed to allocate memory for hostName");
-        disconnect(client_sock_fd);
-        conn->sock_fd = -1;
-        return;
-    }
+    char hostname[1024];
+    // if (!hostname) {
+    //     log_fatal("Failed to allocate memory for hostName");
+    //     disconnect(client_sock_fd);
+    //     conn->sock_fd = -1;
+    //     return;
+    // }
     memcpy(hostname, host_header->value, host_header->value_len);
     hostname[host_header->value_len] = '\0';
 
-    log_info("Process request from fd %d: %s\n", client_sock_fd, hostname);
+    log_debug("Process request from fd %d: %s", client_sock_fd, hostname);
 
     int remote_sock_fd;
     if ((remote_sock_fd = resolve_and_connect(hostname, 80)) == -1) {
@@ -167,43 +214,33 @@ void process_request(connection_ctx_t *conn) {
         conn->sock_fd = -1;
         return;
     }
-    // PASS SEND the request from the client to remote =================================================================
-    size_t bytes_read = buflen;
-    ssize_t total_sent_bytes = 0;
-    while (total_sent_bytes != bytes_read) {
-        ssize_t sent_bytes = send(remote_sock_fd, buffer + total_sent_bytes, bytes_read - total_sent_bytes, MSG_NOSIGNAL);
-        if (sent_bytes == -1) {
-            if (errno == EINTR) continue;
-            log_error("failed to pass request \"%s\" with: %s\n", buffer, strerror(errno));
-            disconnect(remote_sock_fd);
-            disconnect(client_sock_fd);
-            conn->sock_fd = -1;
-            return;
-        } else if (sent_bytes == 0) {
-            log_error("??? something is seriously? wrong? with \"%s\" or the site \"%s\" : %s\n", buffer, hostname, strerror(errno));
-            disconnect(remote_sock_fd);
-            disconnect(client_sock_fd);
-            conn->sock_fd = -1;
-            return;
-        }
-        total_sent_bytes += sent_bytes;
+    log_debug("connected to %s:%d", hostname, remote_sock_fd);
+    // PASS SEND request from client to remote =========================================================================
+
+    size_t bytes_sent = send_buffer(remote_sock_fd, buffer, buflen);
+    if (bytes_sent == -1) {
+        disconnect(client_sock_fd);
+        conn->sock_fd = -1;
+        return;
     }
+    log_debug("buffer sent to remote");
     // request has been sent to remote, now we need to get the response from remote and pass to client
     // PASS RESPONSE ===================================================================================================
-    size_t bytes_recieved = 0, total_bytes_recieved = 0;
+    ssize_t bytes_recieved = 0, total_bytes_recieved = 0;
     response_t response;
     size_t header_len;
     char *headerend_pos = 0;
     do {
         if (total_bytes_recieved == BUFFER_SIZE) {
-            log_error("headers section is too long, consider increasing buffer_size\n");
+            log_error("headers section is too long from %s, consider increasing buffer_size", hostname);
             disconnect(client_sock_fd);
             disconnect(remote_sock_fd);
             conn->sock_fd = -1;
             return;
         }
 
-        bytes_recieved = recv(client_sock_fd, buffer + total_bytes_recieved, BUFFER_SIZE - total_bytes_recieved, 0);
+        bytes_recieved = recv(remote_sock_fd, buffer + total_bytes_recieved, BUFFER_SIZE - total_bytes_recieved, 0);
+        // log_debug("bytes recieved : %s", buffer);
         if (bytes_recieved <= 0) {
             if (bytes_recieved == -1) log_error("receive error from %s: %s", hostname, strerror(errno));
             if (bytes_recieved == 0) log_error("receive error: server %s disconnected", hostname);
@@ -217,53 +254,92 @@ void process_request(connection_ctx_t *conn) {
         buffer[total_bytes_recieved] = '\0';
     } while ((headerend_pos = strstr(buffer, "\r\n\r\n")) == NULL);
     headerend_pos += 4; // advance for "\r\n\r\n"
-    headerend_pos = headerend_pos - buffer; //=--=-=-=-=-=-=-=-=-=-=-=-=-=-=--=-=-=-=-=-=-=-=-=-=-=-=-=-=--=-=-=-=
+    header_len = headerend_pos - buffer;
+    log_debug("found end of response headers");
 
     response.numHeaders = sizeof(response.headers) / sizeof(response.headers[0]);
+    int err;
     err = phr_parse_response(
         buffer, header_len, &response.minorVersion, &response.status, &response.msg,
-        &response.msgLen, response.headers, &response.numHeaders, 0
+        &response.msg_len, response.headers, &response.numHeaders, 0
     );
+    if (err < 0) {
+        log_error("failed to parse response with picoparser from %s: %s", hostname, strerror(errno));
+        disconnect(client_sock_fd);
+        disconnect(remote_sock_fd);
+        conn->sock_fd = -1;
+        return;
+    }
+    // log_debug("response parsed from %s", buffer);
 
-    //-----------------
-    ssize_t bytes_received;
-    while (1) {
-        // Receive data from the remote server
-        bytes_received = recv(remote_sock_fd, buffer, sizeof(buffer), 0);
-
-        if (bytes_received == -1) {
-            if (errno == EINTR) continue;
-            log_error("Failed to receive data from remote server \"%s\": %s\n", url, strerror(errno));
-            break;
-        } else if (bytes_received == 0) {
-            // Connection closed by the remote server
-            log_info("Remote server \"%s\" closed the connection\n", url);
-            break;
-        }
-
-        // Forward the received data to the client
-        ssize_t total_sent = 0;
-        while (total_sent < bytes_received) {
-            ssize_t sent_bytes = send(client_sock_fd, buffer + total_sent, bytes_received - total_sent, MSG_NOSIGNAL);
-
-            if (sent_bytes == -1) {
-                if (errno == EINTR) continue;
-                else {
-                    log_error("Failed to send data to client: %s\n", strerror(errno));
-                    return;
-                }
-            } else if (sent_bytes == 0) {
-                // Connection closed unexpectedly
-                log_error("Client closed the connection unexpectedly\n");
+    size_t content_len = get_content_len(response.headers, response.numHeaders);
+    log_debug("content-length is %d", content_len);
+    // pass the received response header and maybe part of response body
+    bytes_sent = send_buffer(client_sock_fd, buffer,total_bytes_recieved);
+    if (bytes_sent == -1) {
+        disconnect(client_sock_fd);
+        conn->sock_fd = -1;
+        return;
+    }
+    log_debug("first part of response forwarded to client");
+    if (response.status != 200) {
+        // todo for cache
+    }
+    log_debug("starting recv from remote send to client loop");
+    if (content_len != -1) {
+        ssize_t remaining = header_len + content_len - total_bytes_recieved;
+        while (remaining > 0) {
+            bytes_recieved = recv(remote_sock_fd, buffer, BUFFER_SIZE, 0);
+            if (bytes_recieved <= 0) {
+                if (bytes_recieved == -1) log_error("recv: %s", strerror(errno));
+                if (bytes_recieved == 0) log_error("recv: server disconnected");
+                disconnect(client_sock_fd);
+                disconnect(remote_sock_fd);
+                conn->sock_fd = -1;
                 return;
             }
-            total_sent += sent_bytes;
+
+            remaining -= bytes_recieved;
+
+            bytes_sent = send_buffer(client_sock_fd, buffer, bytes_recieved);
+            if (bytes_sent == -1) {
+                disconnect(remote_sock_fd);
+                conn->sock_fd = -1;
+                return;
+            }
         }
+        disconnect(client_sock_fd);
+        disconnect(remote_sock_fd);
+        conn->sock_fd = -1;
+        log_debug("client %s finished successfully", hostname);
+        return;
+    } else {
+        while (1) {
+            bytes_recieved = recv(remote_sock_fd, buffer, BUFFER_SIZE, 0);
+            if (bytes_recieved <= 0) {
+                if (bytes_recieved == -1) log_error("recv: %s", strerror(errno));
+                if (bytes_recieved == 0) log_info("recv: server %s disconnected as per http 1.0 standard", hostname);
+                disconnect(client_sock_fd);
+                disconnect(remote_sock_fd);
+                conn->sock_fd = -1;
+                return;
+            }
+
+            bytes_sent = send_buffer(client_sock_fd, buffer, bytes_recieved);
+            if (bytes_sent == -1) {
+                disconnect(remote_sock_fd);
+                conn->sock_fd = -1;
+                return;
+            }
+        }
+        return;
     }
 }
 
 void proxy_start(const uint16_t server_port) {
-    log_info("Started proxy on: %u\n", server_port);
+    // log_set_level(LOG_INFO);
+
+    log_info("Started proxy on: %u", server_port);
 
     threadpool_t *tp_client = NULL;
     http_cache_t *cache = NULL;
@@ -274,7 +350,7 @@ void proxy_start(const uint16_t server_port) {
 
     server_sockfd = socket(AF_INET, SOCK_STREAM, 0);
     if (server_sockfd < 0) {
-        log_fatal("socket() fail\n");
+        log_fatal("socket() fail");
         return;
     }
 
@@ -283,20 +359,20 @@ void proxy_start(const uint16_t server_port) {
     server_addr.sin_port = htons(server_port);
 
     if (bind(server_sockfd, (struct sockaddr *)&server_addr, sizeof(server_addr)) != 0) {
-        log_fatal("bind() failed: %s\n", strerror(errno));
+        log_fatal("bind() failed: %s", strerror(errno));
         close(server_sockfd);
         return;
     }
 
     if (listen(server_sockfd, SERVER_SOCKET_LISTENER_QUEUE_COUNT) != 0) {
-        log_fatal("listen() failed: %s\n", strerror(errno));
+        log_fatal("listen() failed: %s", strerror(errno));
         close(server_sockfd);
         return;
     }
 
     tp_client = threadpool_init(client_worker_main);
     if (!tp_client) {
-        log_fatal("threadpool_init()\n");
+        log_fatal("threadpool_init()");
         goto end;
     }
 
@@ -310,14 +386,15 @@ void proxy_start(const uint16_t server_port) {
     while (1) {
         const int client_fd = accept(server_sockfd, (struct sockaddr *) &client_addr,  (socklen_t *) &client_addr_len);
         if (client_fd < 0) {
-            log_error("accept() error: %s\n", strerror(errno));
+            log_error("accept() error: %s", strerror(errno));
             continue;
         }
 
         if (threadpool_add_client(tp_client, client_fd, cache) < 0) {
-            log_warn("All workers are full; closing client fd %d.\n", client_fd);
+            log_warn("All workers are full; closing client fd %d.", client_fd);
             close(client_fd);
         }
+        log_debug("added client fd %d", client_fd);
     }
 
 end:

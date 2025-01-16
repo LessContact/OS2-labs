@@ -37,7 +37,7 @@ void *client_worker_main(void *arg) {
         }
         pthread_mutex_unlock(&worker->lock);
 
-        int ret = poll(fds_local, nfds_local, 500);
+        int ret = poll(fds_local, nfds_local, 0);
         if (ret < 0) {
             log_error("poll() error: %s\n", strerror(errno));
             continue;
@@ -95,22 +95,35 @@ void *client_worker_main(void *arg) {
 }
 
 static worker_data_t *pick_worker(threadpool_t *tp) {
-    worker_data_t *best = NULL;
-    uint32_t min_load = UINT_MAX;
+    static int last_worker; // Keeps track of the last assigned worker
+    int next_worker;
 
-    // todo: this is bad because it causes starvation if all requests are done sequentially!!!!
+    // Use a circular index to select the next worker
+    next_worker = (last_worker + 1) % MAX_WORKER_THREADS;
 
-    for (int i = 0; i < MAX_WORKER_THREADS; i++) {
-        worker_data_t *w = &tp->worker_data[i];
-        pthread_mutex_lock(&w->lock);
-        if (w->nfds < min_load) {
-            min_load = w->nfds;
-            best = w;
-        }
-        pthread_mutex_unlock(&w->lock);
-    }
+    // Update the last_worker index
+    last_worker = next_worker;
 
-    return best;
+    // Return the selected worker
+    return &tp->worker_data[next_worker];
+
+
+    // worker_data_t *best = NULL;
+    // uint32_t min_load = UINT_MAX;
+    //
+    // // todo: this is bad because it causes starvation if all requests are done sequentially!!!!
+    //
+    // for (int i = 0; i < MAX_WORKER_THREADS; i++) {
+    //     worker_data_t *w = &tp->worker_data[i];
+    //     pthread_mutex_lock(&w->lock);
+    //     if (w->nfds < min_load) {
+    //         min_load = w->nfds;
+    //         best = w;
+    //     }
+    //     pthread_mutex_unlock(&w->lock);
+    // }
+    //
+    // return best;
 }
 
 static int add_client_to_worker(worker_data_t *worker, int client_fd, http_cache_t *cache) {
