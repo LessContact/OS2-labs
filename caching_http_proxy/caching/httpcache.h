@@ -16,12 +16,19 @@ typedef enum {
     ENTRY_COMPLETE = 1
 } entry_state_t;
 
+typedef struct data_chunk {
+    uint8_t *data;
+    ssize_t size;
+    struct data_chunk *next;
+} data_chunk_t;
+
 // LRU list node
 typedef struct cache_entry {
     char url[MAX_URL_LENGTH];
-    uint8_t *data;
+    data_chunk_t *data_head;    // Head of data chunks list
+    data_chunk_t *data_tail;    // Tail for fast appending
     size_t total_size;
-    size_t current_size;
+    // size_t current_size;
     time_t last_access;
     entry_state_t state;
     uint32_t refcount;
@@ -60,9 +67,9 @@ typedef struct {
 http_cache_t* http_cache_init(size_t max_size);
 void http_cache_shutdown(http_cache_t **cache);
 cache_entry_t* cache_lookup(http_cache_t *cache, const char *url);
-cache_entry_t* cache_insert(http_cache_t *cache, const char *url, size_t expected_size);
-ssize_t cache_entry_read(cache_entry_t *entry, void *buf, size_t offset, size_t size);
-void cache_entry_append(cache_entry_t *entry, const void *data, size_t size);
+cache_entry_t* cache_insert(http_cache_t *cache, const char *url);
+ssize_t cache_entry_read(cache_entry_t *entry, void *buf, ssize_t offset, ssize_t size);
+int cache_entry_append_chunk(cache_entry_t *entry, const void *data, size_t size);
 void cache_entry_complete(cache_entry_t *entry);
 void cache_entry_release(http_cache_t *cache, cache_entry_t *entry);
 

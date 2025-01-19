@@ -37,10 +37,6 @@ long long get_content_len(struct phr_header *headers, size_t numHeaders) {
     struct phr_header *contLenHeader = findHeader(headers, numHeaders, "Content-Length");
     if (!contLenHeader) return -1;
 
-    // char contentLength[contLenHeader->value_len + 1];
-    // memcpy(contentLength, contLenHeader->value, contLenHeader->value_len);
-    // contentLength[contLenHeader->value_len] = '\0';
-
     char *endptr;
     long long ret = strtoll(contLenHeader->value, &endptr, 10);
     if (*endptr != '\r') {
@@ -65,6 +61,7 @@ int resolve_and_connect(const char *url, int port) {
     // Set up hints
     memset(&hints, 0, sizeof(hints));
     hints.ai_family = AF_UNSPEC; // Allow IPv4 or IPv6
+    // hints.ai_family = AF_INET; // Allow IPv4
     hints.ai_socktype = SOCK_STREAM;
 
     // Resolve URL
@@ -92,6 +89,15 @@ int resolve_and_connect(const char *url, int port) {
         break;
     }
 
+    // void* addr;
+    // struct sockaddr_in *ipv4 = (struct sockaddr_in *)rp->ai_addr;
+    // addr = &(ipv4->sin_addr);
+    //
+    // char ipstr[INET6_ADDRSTRLEN];
+    //
+    // inet_ntop(rp->ai_family, addr, ipstr, sizeof(ipstr));
+    // log_fatal("%s\n", ipstr);
+
     freeaddrinfo(res); // Free the linked-list
 
     if (rp == NULL) {
@@ -106,7 +112,7 @@ int resolve_and_connect(const char *url, int port) {
 // on error or socket disconnect shuts down the socket and closes it
 ssize_t send_buffer(int sockfd, const void *buffer, size_t buflen) {
     ssize_t total_sent_bytes = 0;
-    while (total_sent_bytes != buflen) {
+    while (total_sent_bytes < buflen) {
         ssize_t sent_bytes = send(sockfd, buffer + total_sent_bytes, buflen - total_sent_bytes, MSG_NOSIGNAL);
         if (sent_bytes == -1) {
             if (errno == EINTR) continue;
@@ -125,11 +131,11 @@ ssize_t send_buffer(int sockfd, const void *buffer, size_t buflen) {
 
 // returns 0 on success, -1 on error
 int handle_cached_request(cache_entry_t *entry, int client_fd) {
-    size_t offset = 0;
+    ssize_t offset = 0;
     char buffer[8192];
-    size_t bytes_read;
+    ssize_t bytes_read;
 
-    while ((bytes_read = cache_entry_read(entry, buffer, offset, sizeof(buffer))) > 0) {
+        while ((bytes_read = cache_entry_read(entry, buffer, offset, sizeof(buffer))) > 0) {
         if (send_buffer(client_fd, buffer, bytes_read) < 0) {
             log_error("could not send cached data to client");
             return -1;
@@ -159,7 +165,7 @@ void process_request(connection_ctx_t *conn) {
             return;
         }
         if (rret == 0) {
-            log_warn("client socket closed");
+            log_warn("client closed socket");
             disconnect(client_sock_fd);
             conn->sock_fd = -1;
             return;
@@ -213,8 +219,8 @@ void process_request(connection_ctx_t *conn) {
     }
 
     struct phr_header *host_header = findHeader(request.headers, request.numHeaders, "Host");
-    char hostname[1024];
-    // if (!hostname) { // i just couldn't be bothered to make sure this is freed in all branches and VLAs are bad, right?
+    char hostname[1024]; // i just couldn't be bothered to make sure this is freed in all branches and VLAs are bad, right?
+    // if (!hostname) {
     //     log_fatal("Failed to allocate memory for hostName");
     //     disconnect(client_sock_fd);
     //     conn->sock_fd = -1;
@@ -226,7 +232,7 @@ void process_request(connection_ctx_t *conn) {
 
     log_debug("Process request from fd %d: %s", client_sock_fd, hostname);
 
-    // caching =-=-=-=-=-=-=-=-=-=-=-=-=-=
+    // caching =-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=--=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-
     char url[2048];
     if (host_header->value_len + request.pathLen > 2048) {
         log_error("full url too long ");
@@ -247,7 +253,6 @@ void process_request(connection_ctx_t *conn) {
         handle_cached_request(entry, client_sock_fd);
         cache_entry_release(cache, entry);
 
-        //todo send cached response
     } else {
         // If no cache entry was found ============================================================================
 
@@ -277,7 +282,7 @@ void process_request(connection_ctx_t *conn) {
         ssize_t header_len;
         char *headerend_pos = 0;
         do {
-            if (total_bytes_recieved >= BUFFER_SIZE) {
+            if (total_bytes_recieved >= BUFFER_SIZE - 1) {
                 log_error("headers section is too long from %s, consider increasing buffer_size", hostname);
                 pthread_mutex_unlock(&searchCreateMutex);
                 disconnect(client_sock_fd);
@@ -286,7 +291,7 @@ void process_request(connection_ctx_t *conn) {
                 return;
             }
 
-            bytes_recieved = recv(remote_sock_fd, buffer + total_bytes_recieved, BUFFER_SIZE - total_bytes_recieved, 0);
+            bytes_recieved = recv(remote_sock_fd, buffer + total_bytes_recieved, BUFFER_SIZE - total_bytes_recieved - 1, 0);
             // log_debug("bytes recieved : %s", buffer);
             if (bytes_recieved <= 0) {
                 pthread_mutex_unlock(&searchCreateMutex);
@@ -303,6 +308,7 @@ void process_request(connection_ctx_t *conn) {
             total_bytes_recieved += bytes_recieved;
             buffer[total_bytes_recieved] = '\0';
         } while ((headerend_pos = strstr(buffer, "\r\n\r\n")) == NULL);
+
         headerend_pos += 4; // advance for "\r\n\r\n"
         header_len = headerend_pos - buffer;
         log_debug("found end of response headers");
@@ -322,9 +328,9 @@ void process_request(connection_ctx_t *conn) {
             return;
         }
         // log_debug("response parsed from %s", buffer);
+
         int do_cache = 1;
         if (response.status != 200) {
-            // todo for cache
             do_cache = 0;
             pthread_mutex_unlock(&searchCreateMutex);
         }
@@ -332,15 +338,15 @@ void process_request(connection_ctx_t *conn) {
         ssize_t content_len = get_content_len(response.headers, response.numHeaders);
 
         // this is a hack really -=-=-=-=-=-
-        if (content_len <= 0) {
-            do_cache = 0;
-            pthread_mutex_unlock(&searchCreateMutex);
-        }
+        // if (content_len <= 0) {
+        //     do_cache = 0;
+        //     pthread_mutex_unlock(&searchCreateMutex);
+        // }
 
         entry = NULL;
 
         if (do_cache) {
-            entry = cache_insert(cache, url, header_len + content_len);
+            entry = cache_insert(cache, url);
             if (!entry) {
                 log_error("failed to create cache entry");
                 pthread_mutex_unlock(&searchCreateMutex);
@@ -356,13 +362,16 @@ void process_request(connection_ctx_t *conn) {
 
         log_debug("content-length is %d", content_len);
 
-        if (do_cache)
-            cache_entry_append(entry, buffer, total_bytes_recieved);
+        if (do_cache) {
+            if (cache_entry_append_chunk(entry, buffer, total_bytes_recieved)) {
+                //todo error checking
+            }
+        }
 
         // pass the received response header and maybe part of response body
         bytes_sent = send_buffer(client_sock_fd, buffer, total_bytes_recieved);
         if (bytes_sent == -1) {
-            disconnect(client_sock_fd);
+            disconnect(remote_sock_fd);
             conn->sock_fd = -1;
             return;
         }
@@ -390,7 +399,9 @@ void process_request(connection_ctx_t *conn) {
                 remaining -= bytes_recieved;
 
                 if (do_cache) {
-                    cache_entry_append(entry, buffer, bytes_recieved);
+                    if (cache_entry_append_chunk(entry, buffer, bytes_recieved)) {
+                        //todo error checking
+                    }
                 }
 
                 bytes_sent = send_buffer(client_sock_fd, buffer, bytes_recieved);

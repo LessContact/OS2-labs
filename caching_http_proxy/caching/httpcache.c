@@ -3,6 +3,16 @@
 #include <string.h>
 #include <asm-generic/errno.h>
 
+static void free_entry_data(cache_entry_t *entry) {
+    data_chunk_t *chunk = entry->data_head;
+    while (chunk) {
+        data_chunk_t *next = chunk->next;
+        free(chunk->data);
+        free(chunk);
+        chunk = next;
+    }
+}
+
 static uint32_t hash_url(const char *url) {
     uint32_t hash = 2166136261u;
     while (*url) {
@@ -92,7 +102,7 @@ static void evict_lru_entries(http_cache_t *cache, size_t required_size) {
         // Free the entry
         pthread_mutex_destroy(&to_evict->lock);
         pthread_cond_destroy(&to_evict->data_ready);
-        free(to_evict->data);
+        free_entry_data(to_evict);
         free(to_evict);
     }
 }
@@ -114,13 +124,15 @@ http_cache_t* http_cache_init(size_t max_size) {
         pthread_mutex_init(&cache->buckets[i].lock, NULL);
     }
 
-    pthread_mutex_init(&cache->size_lock, PTHREAD_PROCESS_PRIVATE);
+    pthread_mutex_init(&cache->size_lock, NULL);
     pthread_mutex_init(&cache->lru_lock, NULL);
 
     return cache;
 }
 
 cache_entry_t* cache_lookup(http_cache_t *cache, const char *url) {
+    // todo: fix the lookup to work
+
     cache_entry_t *entry = NULL;
     uint32_t bucket_idx = hash_url(url) % cache->num_buckets;
 
@@ -147,42 +159,43 @@ cache_entry_t* cache_lookup(http_cache_t *cache, const char *url) {
     return entry;
 }
 
-cache_entry_t* cache_insert(http_cache_t *cache, const char *url, size_t expected_size) {
+cache_entry_t* cache_insert(http_cache_t *cache, const char *url) {
     // First ensure we have space
-    evict_lru_entries(cache, expected_size);
-
-    pthread_mutex_lock(&cache->size_lock);
-    if (cache->current_size + expected_size > cache->max_size) {
-        pthread_mutex_unlock(&cache->size_lock);
-        log_error("could not free space for new cache entry");
-        return NULL;
-    }
-    cache->current_size += expected_size;  // Update size immediately if we have space
-    pthread_mutex_unlock(&cache->size_lock);
+    // evict_lru_entries(cache, expected_size);
+    //
+    // pthread_mutex_lock(&cache->size_lock);
+    // if (cache->current_size + expected_size > cache->max_size) {
+    //     pthread_mutex_unlock(&cache->size_lock);
+    //     log_error("could not free space for new cache entry");
+    //     return NULL;
+    // }
+    // cache->current_size += expected_size;  // Update size immediately if we have space
+    // pthread_mutex_unlock(&cache->size_lock);
 
     cache_entry_t *entry = calloc(1, sizeof(cache_entry_t));
     if (!entry) {
-        pthread_mutex_lock(&cache->size_lock);
-        cache->current_size -= expected_size;  // Rollback on failure as this is less likely
-        pthread_mutex_unlock(&cache->size_lock);
+        // pthread_mutex_lock(&cache->size_lock);
+        // cache->current_size -= expected_size;  // Rollback on failure as this is less likely
+        // pthread_mutex_unlock(&cache->size_lock);
         log_error("could not allocate memory for cache entry");
         return NULL;
     }
 
-    pthread_mutex_lock(&cache->size_lock);
-    cache->current_size += expected_size;
-    pthread_mutex_unlock(&cache->size_lock);
+    // pthread_mutex_lock(&cache->size_lock);
+    // cache->current_size += expected_size;
+    // pthread_mutex_unlock(&cache->size_lock);
 
     strncpy(entry->url, url, MAX_URL_LENGTH - 1);
-    entry->data = malloc(expected_size);
-    if (!entry->data) {
-        free(entry);
-        log_error("could not allocate memory for cache entry url");
-        return NULL;
-    }
+    // entry->data = malloc(expected_size);
+    // if (!entry->data) {
+    //     free(entry);
+    //     log_error("could not allocate memory for cache entry url");
+    //     return NULL;
+    // }
 
-    entry->total_size = expected_size;
-    entry->current_size = 0;
+    entry->data_head = NULL;
+    entry->data_tail = NULL;
+    entry->total_size = 0;  // Will grow as data is appended
     entry->state = ENTRY_INCOMPLETE;
     entry->refcount = 1;
     entry->last_access = time(NULL);
@@ -204,27 +217,53 @@ cache_entry_t* cache_insert(http_cache_t *cache, const char *url, size_t expecte
     return entry;
 }
 
-void cache_entry_append(cache_entry_t *entry, const void *data, size_t size) {
+// returns 0 on success, -1 on failure
+int cache_entry_append_chunk(cache_entry_t *entry, const void *data, size_t size) {
     pthread_mutex_lock(&entry->lock);
 
-    if (entry->current_size + size <= entry->total_size) {
-        memcpy(entry->data + entry->current_size, data, size);
-        entry->current_size += size;
-        pthread_cond_broadcast(&entry->data_ready);
+    data_chunk_t *new_chunk = malloc(sizeof(data_chunk_t));
+    if (!new_chunk) {
+        pthread_mutex_unlock(&entry->lock);
+        log_error("could not allocate memory for new data chunk");
+        return -1;
     }
 
+    new_chunk->data = malloc(size);
+    if (!new_chunk->data) {
+        free(new_chunk);
+        pthread_mutex_unlock(&entry->lock);
+        log_error("could not allocate memory for chunk data");
+        return -1;
+    }
+
+    memcpy(new_chunk->data, data, size);
+    new_chunk->size = size;
+    new_chunk->next = NULL;
+
+    if (!entry->data_head) {
+        entry->data_head = new_chunk;
+        entry->data_tail = new_chunk;
+    } else {
+        entry->data_tail->next = new_chunk;
+        entry->data_tail = new_chunk;
+    }
+
+    entry->total_size += size;
+    pthread_cond_broadcast(&entry->data_ready);
     pthread_mutex_unlock(&entry->lock);
+    return 0;
 }
 
 // Function to read from cache entry with waiting
-ssize_t cache_entry_read(cache_entry_t *entry, void *buf, size_t offset, size_t size) {
+ssize_t cache_entry_read(cache_entry_t *entry, void *buf, ssize_t offset, ssize_t size) {
     pthread_mutex_lock(&entry->lock);
 
     struct timespec timeout;
+    // clock_gettime(CLOCK_MONOTONIC, &timeout);
     clock_gettime(CLOCK_REALTIME, &timeout);
     timeout.tv_sec += 5; // 5-second timeout
 
-    while (offset >= entry->current_size && entry->state == ENTRY_INCOMPLETE) {
+    while (offset >= entry->total_size && entry->state == ENTRY_INCOMPLETE) {
         int rc = pthread_cond_timedwait(&entry->data_ready, &entry->lock, &timeout);
         if (rc == ETIMEDOUT) {
             pthread_mutex_unlock(&entry->lock);
@@ -233,20 +272,30 @@ ssize_t cache_entry_read(cache_entry_t *entry, void *buf, size_t offset, size_t 
         }
     }
 
-    if (offset >= entry->current_size) {
-        pthread_mutex_unlock(&entry->lock);
-        return 0;  // EOF
+    // Find the starting chunk and offset within it
+    data_chunk_t *chunk = entry->data_head;
+    ssize_t chunk_offset = offset;
+    while (chunk && chunk_offset >= chunk->size) {
+        chunk_offset -= chunk->size;
+        chunk = chunk->next;
     }
 
-    ssize_t available = entry->current_size - offset;
-    ssize_t to_read = (size < available) ? size : available;
+    // Read data from chunks
+    ssize_t bytes_read = 0;
+    uint8_t *dest = buf;
 
-    if (to_read > 0) {
-        memcpy(buf, entry->data + offset, to_read);
+    while (chunk && bytes_read < size) {
+        ssize_t available_in_chunk = chunk->size - chunk_offset;
+        ssize_t to_read = (size - bytes_read < available_in_chunk) ? size - bytes_read : available_in_chunk;
+
+        memcpy(dest + bytes_read, chunk->data + chunk_offset, to_read);
+        bytes_read += to_read;
+        chunk = chunk->next;
+        chunk_offset = 0;  // Reset offset for subsequent chunks
     }
 
     pthread_mutex_unlock(&entry->lock);
-    return to_read;
+    return bytes_read;
 }
 
 void cache_entry_complete(cache_entry_t *entry) {
@@ -285,7 +334,7 @@ void http_cache_shutdown(http_cache_t **cache_ptr) {
             pthread_cond_destroy(&entry->data_ready);
 
             // Free entry data
-            free(entry->data);
+            free_entry_data(entry);
             free(entry);
 
             entry = next;

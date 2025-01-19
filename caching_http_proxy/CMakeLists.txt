@@ -12,6 +12,11 @@ add_library(parser STATIC third_party/picohttpparser.h third_party/picohttpparse
 add_executable(http_proxy main.c proxy/proxy.c threading/threadpool.c caching/httpcache.c
                 proxy/proxy.h threading/threadpool.h caching/httpcache.h)
 
-target_link_libraries(http_proxy curl logc parser)
+# for debugging
+target_compile_options(http_proxy PRIVATE -Og -O0 -fsanitize=address -fsanitize=leak -fsanitize=signed-integer-overflow -fsanitize=bounds-strict)
+# target_complile_options(http_proxy PRIVATE -fsanitize=thread)
+
+target_link_libraries(http_proxy curl logc parser asan ubsan)
+#target_link_libraries(http_proxy curl logc parser)
 
 

@@ -40,7 +40,7 @@ void *client_worker_main(void *arg) {
 
         pthread_mutex_unlock(&worker->lock);
 
-        int ret = poll(fds_local, nfds_local, 0);
+        int ret = poll(fds_local, nfds_local, 10);
         if (ret < 0) {
             log_error("poll() error: %s\n", strerror(errno));
             continue;
@@ -88,8 +88,8 @@ void *client_worker_main(void *arg) {
             if (worker->connections[i]->sock_fd < 0) {
                 free(worker->connections[i]);
                 // Shift the array left by one element to fill the gap
-                memmove(worker->fds + i, worker->fds + i + 1,worker->nfds - 1 - i * sizeof(worker->fds[0]));
-                memmove(worker->connections + i, worker->connections + i + 1, worker->nfds - 1 - i * sizeof(worker->connections[0]));
+                memmove(worker->fds + i, worker->fds + i + 1,(worker->nfds - 1 - i) * sizeof(worker->fds[0]));
+                memmove(worker->connections + i, worker->connections + i + 1, (worker->nfds - 1 - i) * sizeof(worker->connections[0]));
                 // for (int j = i; j < worker->nfds - 1; j++) {
                 //     worker->fds[j]         = worker->fds[j + 1];
                 //     worker->connections[j] = worker->connections[j + 1];
