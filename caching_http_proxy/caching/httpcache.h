@@ -58,19 +58,12 @@ typedef struct {
 } http_cache_t;
 
 http_cache_t* http_cache_init(size_t max_size);
-
 void http_cache_shutdown(http_cache_t **cache);
-
 cache_entry_t* cache_lookup(http_cache_t *cache, const char *url);
-
 cache_entry_t* cache_insert(http_cache_t *cache, const char *url, size_t expected_size);
-
 ssize_t cache_entry_read(cache_entry_t *entry, void *buf, size_t offset, size_t size);
-
 void cache_entry_append(cache_entry_t *entry, const void *data, size_t size);
-
 void cache_entry_complete(cache_entry_t *entry);
-
 void cache_entry_release(http_cache_t *cache, cache_entry_t *entry);
 
 #endif // HTTP_CACHE_H

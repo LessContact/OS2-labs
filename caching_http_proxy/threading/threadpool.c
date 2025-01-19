@@ -31,10 +31,13 @@ void *client_worker_main(void *arg) {
         connection_ctx_t *conn_local[MAX_CLIENTS_PER_THREAD];
         nfds_t nfds_local = worker->nfds;
 
-        for (int i = 0; i < nfds_local; i++) {
-            fds_local[i] = worker->fds[i];
-            conn_local[i] = worker->connections[i];
-        }
+        // for (int i = 0; i < nfds_local; i++) {
+        //     fds_local[i] = worker->fds[i];
+        //     conn_local[i] = worker->connections[i];
+        // }
+        memcpy(fds_local, worker->fds, nfds_local * sizeof(struct pollfd));
+        memcpy(conn_local, worker->connections, nfds_local * sizeof(connection_ctx_t *));
+
         pthread_mutex_unlock(&worker->lock);
 
         int ret = poll(fds_local, nfds_local, 0);
@@ -72,20 +75,25 @@ void *client_worker_main(void *arg) {
 
         // Clean up closed connections
         pthread_mutex_lock(&worker->lock);
-        for (int i = 0; i < nfds_local; i++) {
-            // sync the fds
-            worker->fds[i] = fds_local[i];
-            worker->connections[i] = conn_local[i];
-        }
+        // for (int i = 0; i < nfds_local; i++) {
+        //     // sync the fds
+        //     worker->fds[i] = fds_local[i];
+        //     worker->connections[i] = conn_local[i];
+        // }
+        memcpy(worker->fds, fds_local, nfds_local * sizeof(struct pollfd));
+        memcpy(worker->connections, conn_local, nfds_local * sizeof(connection_ctx_t *));
+
         for (int i = 0; i < worker->nfds; i++) {
             // If sock_fd < 0, connection was closed while processing
             if (worker->connections[i]->sock_fd < 0) {
                 free(worker->connections[i]);
                 // Shift the array left by one element to fill the gap
-                for (int j = i; j < worker->nfds - 1; j++) {
-                    worker->fds[j]         = worker->fds[j + 1];
-                    worker->connections[j] = worker->connections[j + 1];
-                }
+                memmove(worker->fds + i, worker->fds + i + 1,worker->nfds - 1 - i * sizeof(worker->fds[0]));
+                memmove(worker->connections + i, worker->connections + i + 1, worker->nfds - 1 - i * sizeof(worker->connections[0]));
+                // for (int j = i; j < worker->nfds - 1; j++) {
+                //     worker->fds[j]         = worker->fds[j + 1];
+                //     worker->connections[j] = worker->connections[j + 1];
+                // }
                 worker->nfds--;
                 i--; // re-check same index after shift
             }

@@ -220,10 +220,6 @@ void cache_entry_append(cache_entry_t *entry, const void *data, size_t size) {
 ssize_t cache_entry_read(cache_entry_t *entry, void *buf, size_t offset, size_t size) {
     pthread_mutex_lock(&entry->lock);
 
-    // while (offset >= entry->current_size && entry->state != ENTRY_INCOMPLETE) {
-    //     pthread_cond_wait(&entry->data_ready, &entry->lock);
-    // }
-
     struct timespec timeout;
     clock_gettime(CLOCK_REALTIME, &timeout);
     timeout.tv_sec += 5; // 5-second timeout
@@ -232,7 +228,7 @@ ssize_t cache_entry_read(cache_entry_t *entry, void *buf, size_t offset, size_t 
         int rc = pthread_cond_timedwait(&entry->data_ready, &entry->lock, &timeout);
         if (rc == ETIMEDOUT) {
             pthread_mutex_unlock(&entry->lock);
-            log_error("cache timed out");
+            log_error("cache read timed out");
             return -1;  // Timeout error
         }
     }

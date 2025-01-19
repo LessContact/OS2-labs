@@ -194,8 +194,8 @@ void process_request(connection_ctx_t *conn) {
     // log_debug("request received and parsed: %s", buffer);
     // request is now received from client and parsed ==================================================================
 
-    // Only GET/HEAD are accepted
-    if (strncmp(request.method, "GET", 3) != 0 && strncmp(request.method, "HEAD", 4) != 0) {
+    // Only GET are accepted
+    if (strncmp(request.method, "GET", 3) != 0 ) {//&& strncmp(request.method, "HEAD", 4) != 0) {
         // todo possibly forward unsupported requests without any work
         log_warn("Unsupported method: %.*s from %.*s", request.methodLen, request.method, request.pathLen,
                  request.path);
@@ -226,10 +226,10 @@ void process_request(connection_ctx_t *conn) {
 
     log_debug("Process request from fd %d: %s", client_sock_fd, hostname);
 
-    //todo caching
+    // caching =-=-=-=-=-=-=-=-=-=-=-=-=-=
     char url[2048];
     if (host_header->value_len + request.pathLen > 2048) {
-        log_error("full url too long");
+        log_error("full url too long ");
         disconnect(client_sock_fd);
         conn->sock_fd = -1;
         return;
