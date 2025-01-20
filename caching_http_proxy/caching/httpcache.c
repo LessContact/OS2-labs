@@ -131,12 +131,10 @@ http_cache_t* http_cache_init(size_t max_size) {
 }
 
 cache_entry_t* cache_lookup(http_cache_t *cache, const char *url) {
-    // todo: fix the lookup to work
 
     cache_entry_t *entry = NULL;
     uint32_t bucket_idx = hash_url(url) % cache->num_buckets;
 
-    pthread_mutex_lock(&cache->lru_lock);
     pthread_mutex_lock(&cache->buckets[bucket_idx].lock);
 
     for (entry = cache->buckets[bucket_idx].entries; entry != NULL; entry = entry->next) {
@@ -145,8 +143,10 @@ cache_entry_t* cache_lookup(http_cache_t *cache, const char *url) {
             entry->refcount++;
             entry->last_access = time(NULL);
 
+            pthread_mutex_lock(&cache->lru_lock);
             lru_remove(cache, entry);
             lru_add_head(cache, entry);
+            pthread_mutex_unlock(&cache->lru_lock);
 
             pthread_mutex_unlock(&entry->lock);
             break;
@@ -154,7 +154,6 @@ cache_entry_t* cache_lookup(http_cache_t *cache, const char *url) {
     }
 
     pthread_mutex_unlock(&cache->buckets[bucket_idx].lock);
-    pthread_mutex_unlock(&cache->lru_lock);
 
     return entry;
 }
@@ -263,6 +262,7 @@ ssize_t cache_entry_read(cache_entry_t *entry, void *buf, ssize_t offset, ssize_
     clock_gettime(CLOCK_REALTIME, &timeout);
     timeout.tv_sec += 5; // 5-second timeout
 
+    // todo: this can maybe be an exit point to support multiplexing, though it maybe needs to be in proxy.c and not here
     while (offset >= entry->total_size && entry->state == ENTRY_INCOMPLETE) {
         int rc = pthread_cond_timedwait(&entry->data_ready, &entry->lock, &timeout);
         if (rc == ETIMEDOUT) {

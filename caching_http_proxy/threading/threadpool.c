@@ -53,6 +53,8 @@ void *client_worker_main(void *arg) {
         // Process each readable socket
         for (int i = 0; i < nfds_local; i++) {
             if (fds_local[i].revents & (POLLERR | POLLNVAL)) {
+                if (fds_local[i].revents & POLLERR) log_error("POLLERR error");
+                if (fds_local[i].revents & POLLNVAL) log_error("POLLNVAL error");
                 // Mark the socket as closed
                 close(conn_local[i]->sock_fd);
                 conn_local[i]->sock_fd = -1;
@@ -105,37 +107,30 @@ void *client_worker_main(void *arg) {
 }
 
 static worker_data_t *pick_worker(threadpool_t *tp) {
-    static int last_worker; // Keeps track of the last assigned worker
-    int next_worker;
+    static int last_worker; // Keeps track of the last worker picked
 
-    // Use a circular index to select the next worker
-    next_worker = (last_worker + 1) % MAX_WORKER_THREADS;
+    int start_index = (last_worker + 1) % MAX_WORKER_THREADS; // Rotate starting point
+    int best_worker = -1;
+    uint32_t min_load = UINT_MAX;
 
-    // Update the last_worker index
-    last_worker = next_worker;
+    for (int i = 0; i < MAX_WORKER_THREADS; i++) {
+        int current_index = (start_index + i) % MAX_WORKER_THREADS;
+        worker_data_t *w = &tp->worker_data[current_index];
 
-    // Return the selected worker
-    return &tp->worker_data[next_worker];
+        pthread_mutex_lock(&w->lock);
+        if (w->nfds < min_load) {
+            min_load = w->nfds;
+            best_worker = current_index;
+        }
+        pthread_mutex_unlock(&w->lock);
+    }
 
-    // i dont know if roundrobin is better than what i had before, but whatevs ig
+    // Update the last picked worker
+    last_worker = best_worker;
 
-    // worker_data_t *best = NULL;
-    // uint32_t min_load = UINT_MAX;
-    //
-    // // todo: this is bad because it causes starvation if all requests are done sequentially!!!!
-    //
-    // for (int i = 0; i < MAX_WORKER_THREADS; i++) {
-    //     worker_data_t *w = &tp->worker_data[i];
-    //     pthread_mutex_lock(&w->lock);
-    //     if (w->nfds < min_load) {
-    //         min_load = w->nfds;
-    //         best = w;
-    //     }
-    //     pthread_mutex_unlock(&w->lock);
-    // }
-    //
-    // return best;
+    return &tp->worker_data[best_worker];
 }
+
 
 static int add_client_to_worker(worker_data_t *worker, int client_fd, http_cache_t *cache) {
     pthread_mutex_lock(&worker->lock);

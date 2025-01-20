@@ -96,7 +96,7 @@ int resolve_and_connect(const char *url, int port) {
     // char ipstr[INET6_ADDRSTRLEN];
     //
     // inet_ntop(rp->ai_family, addr, ipstr, sizeof(ipstr));
-    // log_fatal("%s\n", ipstr);
+    // log_fatal("%s", ipstr);
 
     freeaddrinfo(res); // Free the linked-list
 
