@@ -19,8 +19,29 @@
 static pthread_mutex_t searchCreateMutex;
 
 static void disconnect(int sock) {
-    shutdown(sock, SHUT_RDWR);
-    close(sock);
+    int error = 0;
+    socklen_t len = sizeof(error);
+    int ret = getsockopt(sock, SOL_SOCKET, SO_ERROR, &error, &len);
+    if (ret == 0 && error != 0) {
+        // Socket is in error state
+        log_error("Socket error before shutdown: %s\n", strerror(error));
+    }
+
+    // First shutdown writing
+    int shutdown_wr = shutdown(sock, SHUT_WR);
+    if (shutdown_wr == -1) {
+        log_error("shutdown WR failed: %s", strerror(errno));
+    }
+
+    // Then shutdown reading
+    int shutdown_rd = shutdown(sock, SHUT_RD);
+    if (shutdown_rd == -1) {
+        log_error("shutdown RD failed: %s", strerror(errno));
+    }
+    ret = close(sock);
+    if (ret == -1) {
+        log_error("close failed: %s", strerror(errno));
+    }
 }
 
 static struct phr_header *findHeader(struct phr_header *headers, size_t numHeaders, const char *name) {
@@ -135,12 +156,16 @@ int handle_cached_request(cache_entry_t *entry, int client_fd) {
     char buffer[8192];
     ssize_t bytes_read;
 
-        while ((bytes_read = cache_entry_read(entry, buffer, offset, sizeof(buffer))) > 0) {
+    while ((bytes_read = cache_entry_read(entry, buffer, offset, sizeof(buffer))) > 0) {
         if (send_buffer(client_fd, buffer, bytes_read) < 0) {
             log_error("could not send cached data to client");
             return -1;
         }
         offset += bytes_read;
+    }
+    if (bytes_read == -1) {
+        log_error("cache failed");
+        return -1;
     }
     return 0;
 }
@@ -250,9 +275,14 @@ void process_request(connection_ctx_t *conn) {
     if (entry) {
         pthread_mutex_unlock(&searchCreateMutex);
 
-        handle_cached_request(entry, client_sock_fd);
-        cache_entry_release(cache, entry);
-
+        int ret = handle_cached_request(entry, client_sock_fd);
+        cache_entry_release(entry);
+        if (ret == -1) {
+            log_error("failed to handle cached request");
+            // return;
+        }
+        disconnect(client_sock_fd);
+        // return;
     } else {
         // If no cache entry was found ============================================================================
 
@@ -330,7 +360,7 @@ void process_request(connection_ctx_t *conn) {
         // log_debug("response parsed from %s", buffer);
 
         int do_cache = 1;
-        if (response.status != 200) {
+        if (response.status != 200 && response.status != 304) {
             do_cache = 0;
             pthread_mutex_unlock(&searchCreateMutex);
         }
@@ -371,6 +401,8 @@ void process_request(connection_ctx_t *conn) {
         // pass the received response header and maybe part of response body
         bytes_sent = send_buffer(client_sock_fd, buffer, total_bytes_recieved);
         if (bytes_sent == -1) {
+            cache_entry_release(entry);
+            cache_entry_cancel(entry);
             disconnect(remote_sock_fd);
             conn->sock_fd = -1;
             return;
@@ -384,7 +416,8 @@ void process_request(connection_ctx_t *conn) {
                 bytes_recieved = recv(remote_sock_fd, buffer, BUFFER_SIZE, 0);
                 if (bytes_recieved <= 0) {
                     if (do_cache) {
-                        cache_entry_release(cache, entry);
+                        cache_entry_release(entry);
+                        cache_entry_cancel(entry);
                     }
                     if (bytes_recieved == -1)
                         log_error("recv: %s", strerror(errno));
@@ -407,7 +440,8 @@ void process_request(connection_ctx_t *conn) {
                 bytes_sent = send_buffer(client_sock_fd, buffer, bytes_recieved);
                 if (bytes_sent == -1) {
                     if (do_cache) {
-                        cache_entry_release(cache, entry);
+                        cache_entry_release(entry);
+                        cache_entry_cancel(entry);
                     }
                     disconnect(remote_sock_fd);
                     conn->sock_fd = -1;
@@ -416,26 +450,32 @@ void process_request(connection_ctx_t *conn) {
             }
             if (do_cache) {
                 cache_entry_complete(entry);
-                cache_entry_release(cache, entry);
+                cache_entry_release(entry);
             }
             disconnect(client_sock_fd);
             disconnect(remote_sock_fd);
             conn->sock_fd = -1;
             log_debug("client %s finished successfully", hostname);
             return;
-        } else {
+        } else { //todo: test: i added cancellation, now to check if it actually works or not!??!?!?
             while (1) {
                 bytes_recieved = recv(remote_sock_fd, buffer, BUFFER_SIZE, 0);
                 if (bytes_recieved <= 0) {
-                    if (bytes_recieved == -1)
+                    if (bytes_recieved == -1) {
                         log_error("recv: %s", strerror(errno));
+                        if (do_cache) {
+                            cache_entry_cancel(entry);
+                        }
+                    }
                     if (bytes_recieved == 0) {
                         log_info("recv: server %s disconnected as per http 1.0 standard", hostname);
                         if (do_cache) {
                             cache_entry_complete(entry);
                         }
                     }
-                    cache_entry_release(cache, entry);
+                    if (do_cache) {
+                        cache_entry_release(entry);
+                    }
                     disconnect(client_sock_fd);
                     disconnect(remote_sock_fd);
                     conn->sock_fd = -1;
@@ -445,7 +485,8 @@ void process_request(connection_ctx_t *conn) {
                 bytes_sent = send_buffer(client_sock_fd, buffer, bytes_recieved);
                 if (bytes_sent == -1) {
                     if (do_cache) {
-                        cache_entry_release(cache, entry);
+                        cache_entry_cancel(entry);
+                        cache_entry_release(entry);
                     }
                     disconnect(remote_sock_fd);
                     conn->sock_fd = -1;
@@ -456,8 +497,30 @@ void process_request(connection_ctx_t *conn) {
     }
 }
 
+// Flag to indicate if we should continue running
+static volatile sig_atomic_t keep_running = 1;
+
+// Signal handler function
+static void sigterm_handler(int signum) {
+    // It's safe to do this since sig_atomic_t is atomic
+    keep_running = 0;
+
+    // Note: In a signal handler, you should only use async-signal-safe functions
+    // write() is async-signal-safe, printf() is not
+    const char *msg = "Received SIGTERM. Stopping and cleaning up...\n";
+    // write(STDOUT_FILENO, msg, strlen(msg) - 1);
+    log_info("%s", msg);
+}
+
 void proxy_start(const uint16_t server_port) {
     log_set_level(LOG_INFO);
+
+    struct sigaction sa = {0};
+    sa.sa_handler = sigterm_handler;
+    if (sigaction(SIGINT, &sa, NULL) == -1) {
+        log_fatal("Failed to set up SIGTERM handler");
+        return;
+    }
 
     log_info("Started proxy on: %u", server_port);
 
@@ -502,10 +565,13 @@ void proxy_start(const uint16_t server_port) {
         goto end;
     }
 
+
+
     // Accept loop: assign each client to a worker
     while (1) {
         const int client_fd = accept(server_sockfd, (struct sockaddr *) &client_addr, (socklen_t *) &client_addr_len);
         if (client_fd < 0) {
+            if (errno == EINTR) goto loop_end;
             log_error("accept() error: %s", strerror(errno));
             continue;
         }
@@ -514,7 +580,10 @@ void proxy_start(const uint16_t server_port) {
             log_warn("All workers are full; closing client fd %d.", client_fd);
             close(client_fd);
         }
+
         log_debug("added client fd %d", client_fd);
+        loop_end:
+        if (!keep_running) break;
     }
 
 end:

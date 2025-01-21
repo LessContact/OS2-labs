@@ -53,10 +53,12 @@ void *client_worker_main(void *arg) {
         // Process each readable socket
         for (int i = 0; i < nfds_local; i++) {
             if (fds_local[i].revents & (POLLERR | POLLNVAL)) {
-                if (fds_local[i].revents & POLLERR) log_error("POLLERR error");
+                if (fds_local[i].revents & POLLERR) {
+                    log_error("POLLERR error");
+                    // Mark the socket as closed
+                    close(conn_local[i]->sock_fd);
+                }
                 if (fds_local[i].revents & POLLNVAL) log_error("POLLNVAL error");
-                // Mark the socket as closed
-                close(conn_local[i]->sock_fd);
                 conn_local[i]->sock_fd = -1;
             } else if (fds_local[i].revents & POLLIN) {
                 process_request(conn_local[i]);
@@ -103,6 +105,29 @@ void *client_worker_main(void *arg) {
         pthread_mutex_unlock(&worker->lock);
     }
 
+    // free resources
+    pthread_mutex_lock(&worker->lock);
+
+    // Free all remaining connections
+    for (int i = 0; i < worker->nfds; i++) {
+        if (worker->connections[i] != NULL) {
+            // Close socket if it's still open
+            if (worker->connections[i]->sock_fd >= 0) {
+                close(worker->connections[i]->sock_fd);
+            }
+            // Free the connection context
+            free(worker->connections[i]);
+            worker->connections[i] = NULL;
+        }
+    }
+
+    // Reset the number of file descriptors
+    worker->nfds = 0;
+    // Clear the arrays
+    // memset(worker->fds, 0, sizeof(struct pollfd) * MAX_CLIENTS_PER_THREAD);
+    // memset(worker->connections, 0, sizeof(connection_ctx_t*) * MAX_CLIENTS_PER_THREAD);
+
+    pthread_mutex_unlock(&worker->lock);
     return NULL;
 }
 
@@ -140,7 +165,7 @@ static int add_client_to_worker(worker_data_t *worker, int client_fd, http_cache
         return -1; // This worker is at capacity
     }
 
-    int idx = worker->nfds++;
+    ulong idx = worker->nfds++;
     worker->fds[idx].fd = client_fd;
     worker->fds[idx].events = POLLIN;
     worker->fds[idx].revents = 0;
@@ -148,6 +173,7 @@ static int add_client_to_worker(worker_data_t *worker, int client_fd, http_cache
     connection_ctx_t *conn = calloc(1, sizeof(connection_ctx_t));
     if (!conn) {
         // If allocation fails, revert nfds and return -1
+        worker->fds[idx].fd = -1;
         worker->nfds--;
         pthread_mutex_unlock(&worker->lock);
         return -1;
@@ -226,10 +252,13 @@ void threadpool_shutdown(threadpool_t **tp) {
     for (uint32_t i = 0; i < MAX_WORKER_THREADS; ++i) {
         pthread_join((*tp)->worker_threads[i], NULL);
         pthread_cond_destroy(&(*tp)->worker_data[i].worker_notify);
+        pthread_mutex_destroy(&(*tp)->worker_data[i].lock);
     }
 
     free((*tp)->worker_data);
 
     free(*tp);
     *tp = NULL;
+
+    log_info("threadpool shutdown successfully");
 }

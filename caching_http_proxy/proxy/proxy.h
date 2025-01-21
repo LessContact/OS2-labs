@@ -2,6 +2,7 @@
 #define PROXY_H
 
 #include <stdint.h>
+#include <signal.h>
 #include "../third_party/picohttpparser.h"
 #include "../threading/threadpool.h"
 

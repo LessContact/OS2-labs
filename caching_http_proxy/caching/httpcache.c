@@ -49,6 +49,44 @@ static void lru_add_head(http_cache_t *cache, cache_entry_t *entry) {
         cache->lru_tail = entry;
 }
 
+static void remove_entry(http_cache_t* cache, cache_entry_t *entry) {
+    pthread_mutex_lock(&entry->lock);
+    cache_entry_t *to_evict = entry;
+    if (to_evict->refcount > 0) {
+        pthread_mutex_unlock(&entry->lock);
+        return;;
+    }
+
+    pthread_mutex_lock(&cache->lru_lock);
+    // Remove from LRU list
+    lru_remove(cache, to_evict);
+    pthread_mutex_unlock(&cache->lru_lock);
+
+    uint32_t bucket_idx = hash_url(to_evict->url) % cache->num_buckets;
+    pthread_mutex_lock(&cache->buckets[bucket_idx].lock);
+
+    // Remove from hash bucket
+    cache_entry_t **pp = &cache->buckets[bucket_idx].entries;
+    while (*pp && *pp != to_evict)
+        pp = &(*pp)->next;
+    if (*pp)
+        *pp = to_evict->next;
+
+    // Update size atomically
+    pthread_mutex_lock(&cache->size_lock);
+    cache->current_size -= to_evict->total_size;
+    pthread_mutex_unlock(&cache->size_lock);
+
+    pthread_mutex_unlock(&cache->buckets[bucket_idx].lock);
+
+    // Free the entry
+    pthread_mutex_destroy(&to_evict->lock);
+    pthread_cond_destroy(&to_evict->data_ready);
+    free_entry_data(to_evict);
+    free(to_evict);
+}
+
+// dont use this without rewriting it
 static void evict_lru_entries(http_cache_t *cache, size_t required_size) {
     while (1) {
         size_t current_size;
@@ -107,29 +145,6 @@ static void evict_lru_entries(http_cache_t *cache, size_t required_size) {
     }
 }
 
-http_cache_t* http_cache_init(size_t max_size) {
-    http_cache_t *cache = calloc(1, sizeof(http_cache_t));
-    if (!cache) return NULL;
-
-    cache->num_buckets = MAX_BUCKETS;
-    cache->max_size = max_size ? max_size : DEFAULT_CACHE_SIZE;
-    cache->buckets = calloc(cache->num_buckets, sizeof(cache_bucket_t));
-
-    if (!cache->buckets) {
-        free(cache);
-        return NULL;
-    }
-
-    for (size_t i = 0; i < cache->num_buckets; i++) {
-        pthread_mutex_init(&cache->buckets[i].lock, NULL);
-    }
-
-    pthread_mutex_init(&cache->size_lock, NULL);
-    pthread_mutex_init(&cache->lru_lock, NULL);
-
-    return cache;
-}
-
 cache_entry_t* cache_lookup(http_cache_t *cache, const char *url) {
 
     cache_entry_t *entry = NULL;
@@ -140,6 +155,13 @@ cache_entry_t* cache_lookup(http_cache_t *cache, const char *url) {
     for (entry = cache->buckets[bucket_idx].entries; entry != NULL; entry = entry->next) {
         if (strcmp(entry->url, url) == 0) {
             pthread_mutex_lock(&entry->lock);
+
+            // Skip cancelled entries
+            if (entry->state == ENTRY_CANCELLED) {
+                pthread_mutex_unlock(&entry->lock);
+                continue;
+            }
+
             entry->refcount++;
             entry->last_access = time(NULL);
 
@@ -219,6 +241,11 @@ cache_entry_t* cache_insert(http_cache_t *cache, const char *url) {
 // returns 0 on success, -1 on failure
 int cache_entry_append_chunk(cache_entry_t *entry, const void *data, size_t size) {
     pthread_mutex_lock(&entry->lock);
+    if (entry->state == ENTRY_CANCELLED) {
+        pthread_mutex_unlock(&entry->lock);
+        log_fatal("cache entry should never be used after cancellation, how did this happen????");
+        return -1;
+    }
 
     data_chunk_t *new_chunk = malloc(sizeof(data_chunk_t));
     if (!new_chunk) {
@@ -258,18 +285,29 @@ ssize_t cache_entry_read(cache_entry_t *entry, void *buf, ssize_t offset, ssize_
     pthread_mutex_lock(&entry->lock);
 
     struct timespec timeout;
-    // clock_gettime(CLOCK_MONOTONIC, &timeout);
-    clock_gettime(CLOCK_REALTIME, &timeout);
+    clock_gettime(CLOCK_REALTIME, &timeout); // it is REALTIME because that's what timed wait requires (epoch time)
     timeout.tv_sec += 5; // 5-second timeout
 
     // todo: this can maybe be an exit point to support multiplexing, though it maybe needs to be in proxy.c and not here
     while (offset >= entry->total_size && entry->state == ENTRY_INCOMPLETE) {
         int rc = pthread_cond_timedwait(&entry->data_ready, &entry->lock, &timeout);
+        // Check if entry was cancelled
+        if (entry->state == ENTRY_CANCELLED) { // todo maybe shift this after ETIMEDOUT
+            pthread_mutex_unlock(&entry->lock);
+            log_error("cache entry was cancelled");
+            return -1;
+        }
         if (rc == ETIMEDOUT) {
             pthread_mutex_unlock(&entry->lock);
             log_error("cache read timed out");
             return -1;  // Timeout error
         }
+    }
+
+    // Don't read from cancelled entries
+    if (entry->state == ENTRY_CANCELLED) {
+        pthread_mutex_unlock(&entry->lock);
+        return -1;
     }
 
     // Find the starting chunk and offset within it
@@ -299,16 +337,59 @@ ssize_t cache_entry_read(cache_entry_t *entry, void *buf, ssize_t offset, ssize_
 }
 
 void cache_entry_complete(cache_entry_t *entry) {
+    if (entry == NULL) {
+        log_fatal("cache entry should not be NULL");
+        return;
+    }
     pthread_mutex_lock(&entry->lock);
     entry->state = ENTRY_COMPLETE;
     pthread_cond_broadcast(&entry->data_ready);
     pthread_mutex_unlock(&entry->lock);
 }
 
-void cache_entry_release(http_cache_t *cache, cache_entry_t *entry) {
+void cache_entry_release(cache_entry_t *entry) {
+    if (entry == NULL) {
+        log_fatal("cache entry should not be NULL");
+        return;
+    }
     pthread_mutex_lock(&entry->lock);
     entry->refcount--;
     pthread_mutex_unlock(&entry->lock);
+}
+
+void cache_entry_cancel(cache_entry_t *entry) {
+    if (entry == NULL) {
+        log_fatal("cache entry should not be NULL");
+        return;
+    }
+    pthread_mutex_lock(&entry->lock);
+    entry->state = ENTRY_CANCELLED;
+    pthread_cond_broadcast(&entry->data_ready);  // Wake up any waiting readers
+    pthread_mutex_unlock(&entry->lock);
+}
+
+
+http_cache_t* http_cache_init(size_t max_size) {
+    http_cache_t *cache = calloc(1, sizeof(http_cache_t));
+    if (!cache) return NULL;
+
+    cache->num_buckets = MAX_BUCKETS;
+    cache->max_size = max_size ? max_size : DEFAULT_CACHE_SIZE;
+    cache->buckets = calloc(cache->num_buckets, sizeof(cache_bucket_t));
+
+    if (!cache->buckets) {
+        free(cache);
+        return NULL;
+    }
+
+    for (size_t i = 0; i < cache->num_buckets; i++) {
+        pthread_mutex_init(&cache->buckets[i].lock, NULL);
+    }
+
+    pthread_mutex_init(&cache->size_lock, NULL);
+    pthread_mutex_init(&cache->lru_lock, NULL);
+
+    return cache;
 }
 
 void http_cache_shutdown(http_cache_t **cache_ptr) {

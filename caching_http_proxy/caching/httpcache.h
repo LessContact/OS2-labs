@@ -13,7 +13,8 @@
 
 typedef enum {
     ENTRY_INCOMPLETE = 0,
-    ENTRY_COMPLETE = 1
+    ENTRY_COMPLETE = 1,
+    ENTRY_CANCELLED = 2
 } entry_state_t;
 
 typedef struct data_chunk {
@@ -50,7 +51,7 @@ typedef struct cache_bucket {
     pthread_mutex_t lock;
 } cache_bucket_t;
 
-typedef struct {
+typedef struct http_cache {
     cache_bucket_t *buckets;
     size_t num_buckets;
     size_t current_size;
@@ -71,6 +72,7 @@ cache_entry_t* cache_insert(http_cache_t *cache, const char *url);
 ssize_t cache_entry_read(cache_entry_t *entry, void *buf, ssize_t offset, ssize_t size);
 int cache_entry_append_chunk(cache_entry_t *entry, const void *data, size_t size);
 void cache_entry_complete(cache_entry_t *entry);
-void cache_entry_release(http_cache_t *cache, cache_entry_t *entry);
+void cache_entry_release(cache_entry_t *entry);
+void cache_entry_cancel(cache_entry_t *entry);
 
 #endif // HTTP_CACHE_H
