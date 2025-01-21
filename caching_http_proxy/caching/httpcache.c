@@ -3,6 +3,7 @@
 #include <string.h>
 #include <asm-generic/errno.h>
 
+// it is the caller's responsibility to avoid race conditions while using this function
 static void free_entry_data(cache_entry_t *entry) {
     data_chunk_t *chunk = entry->data_head;
     while (chunk) {
@@ -369,6 +370,130 @@ void cache_entry_cancel(cache_entry_t *entry) {
     pthread_mutex_unlock(&entry->lock);
 }
 
+// Cleanup function that removes cancelled entries
+static void cleanup_cancelled_entries(http_cache_t *cache) {
+    log_info("starting cleanup of cancelled entries");
+    for (size_t i = 0; i < cache->num_buckets; i++) {
+            pthread_mutex_lock(&cache->buckets[i].lock);
+
+        cache_entry_t *entry = cache->buckets[i].entries;
+        cache_entry_t *prev = NULL;
+
+        while (entry != NULL) {
+            pthread_mutex_lock(&entry->lock);
+
+            if (entry->state == ENTRY_CANCELLED && entry->refcount == 0) {
+                cache_entry_t *to_remove = entry;
+                entry = entry->next;
+
+                // Update the linked list
+                if (prev == NULL) {
+                    cache->buckets[i].entries = entry;
+                } else {
+                    prev->next = entry;
+                }
+
+                // Remove from LRU list
+                pthread_mutex_lock(&cache->lru_lock);
+                lru_remove(cache, to_remove);
+                pthread_mutex_unlock(&cache->lru_lock);
+
+                // Update cache size
+                pthread_mutex_lock(&cache->size_lock);
+                cache->current_size -= to_remove->total_size;
+                pthread_mutex_unlock(&cache->size_lock);
+
+                pthread_mutex_unlock(&to_remove->lock);
+
+                // Clean up the entry
+                pthread_mutex_destroy(&to_remove->lock);
+                pthread_cond_destroy(&to_remove->data_ready);
+                free_entry_data(to_remove);
+                free(to_remove);
+                to_remove = NULL;
+            } else {
+                pthread_mutex_unlock(&entry->lock);
+                prev = entry;
+                entry = entry->next;
+            }
+        }
+
+        pthread_mutex_unlock(&cache->buckets[i].lock);
+    }
+    log_info("cancelled entries cleaned up");
+}
+
+// Collector thread function
+static void *collector_thread_func(void *arg) {
+    http_cache_t *cache = (http_cache_t *)arg;
+    struct timespec wait_time;
+
+    while (1) {
+        pthread_mutex_lock(&cache->collector_lock);
+
+        // Wait for X minutes or until signaled
+        clock_gettime(CLOCK_REALTIME, &wait_time);
+        // wait_time.tv_sec += 300; // 5 minutes
+        wait_time.tv_sec += 60; // 1 minute
+
+        pthread_cond_timedwait(&cache->collector_cond, &cache->collector_lock, &wait_time);
+        if (!cache->collector_running) {
+            pthread_mutex_unlock(&cache->collector_lock);
+            break;
+        }
+        pthread_mutex_unlock(&cache->collector_lock);
+
+        // Run cleanup
+        cleanup_cancelled_entries(cache);
+    }
+
+    return NULL;
+}
+
+static void http_cache_shutdown_no_collector(http_cache_t **cache_ptr) {
+    if (!cache_ptr || !*cache_ptr) {
+        return;
+    }
+
+    http_cache_t *cache = *cache_ptr;
+
+    // Free all entries in each bucket
+    for (size_t i = 0; i < cache->num_buckets; i++) {
+        cache_bucket_t *bucket = &cache->buckets[i];
+
+        // Lock the bucket to ensure no new operations can start
+        pthread_mutex_lock(&bucket->lock);
+
+        cache_entry_t *entry = bucket->entries;
+        while (entry) {
+            cache_entry_t *next = entry->next;
+
+            // Destroy synchronization primitives
+            pthread_mutex_destroy(&entry->lock);
+            pthread_cond_destroy(&entry->data_ready);
+
+            // Free entry data
+            free_entry_data(entry);
+            free(entry);
+
+            entry = next;
+        }
+
+        pthread_mutex_unlock(&bucket->lock);
+        pthread_mutex_destroy(&bucket->lock);
+    }
+
+    // Destroy remaining synchronization primitives
+    pthread_mutex_destroy(&cache->lru_lock);
+    pthread_mutex_destroy(&cache->size_lock);
+
+    // Free buckets array and cache structure
+    free(cache->buckets);
+    free(cache);
+    *cache_ptr = NULL;
+
+    log_info("Cache shutdown_no_collector completed successfully");
+}
 
 http_cache_t* http_cache_init(size_t max_size) {
     http_cache_t *cache = calloc(1, sizeof(http_cache_t));
@@ -390,6 +515,22 @@ http_cache_t* http_cache_init(size_t max_size) {
     pthread_mutex_init(&cache->size_lock, NULL);
     pthread_mutex_init(&cache->lru_lock, NULL);
 
+    cache->collector_running = 1;
+    pthread_mutex_init(&cache->collector_lock, NULL);
+    pthread_cond_init(&cache->collector_cond, NULL);
+
+    // Start collector thread
+    if (pthread_create(&cache->collector_thread, NULL, collector_thread_func, cache) != 0) {
+        http_cache_shutdown_no_collector(&cache);
+        pthread_mutex_destroy(&cache->collector_lock);
+        pthread_cond_destroy(&cache->collector_cond);
+        // Handle error
+        log_fatal("Failed to create collector thread");
+        // Clean up and return error
+
+        return NULL;
+    }
+
     return cache;
 }
 
@@ -399,6 +540,19 @@ void http_cache_shutdown(http_cache_t **cache_ptr) {
     }
 
     http_cache_t *cache = *cache_ptr;
+
+    // Stop collector thread
+    pthread_mutex_lock(&cache->collector_lock);
+    cache->collector_running = 0;
+    pthread_cond_signal(&cache->collector_cond);
+    pthread_mutex_unlock(&cache->collector_lock);
+
+    // Wait for collector thread to finish
+    pthread_join(cache->collector_thread, NULL);
+
+    // Clean up collector thread resources
+    pthread_mutex_destroy(&cache->collector_lock);
+    pthread_cond_destroy(&cache->collector_cond);
 
     // Free all entries in each bucket
     for (size_t i = 0; i < cache->num_buckets; i++) {

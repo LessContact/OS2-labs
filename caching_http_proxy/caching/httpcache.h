@@ -63,6 +63,12 @@ typedef struct http_cache {
     pthread_mutex_t lru_lock;     // Protects LRU list modifications
 
     pthread_mutex_t size_lock; // Protects current_size
+
+    // Collector thread and collector managment management
+    pthread_t collector_thread;
+    volatile int collector_running;
+    pthread_mutex_t collector_lock;
+    pthread_cond_t collector_cond;
 } http_cache_t;
 
 http_cache_t* http_cache_init(size_t max_size);
