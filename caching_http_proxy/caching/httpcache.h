@@ -11,7 +11,7 @@
 #define DEFAULT_CACHE_SIZE (100 * 1024 * 1024) // 100MB default cache size
 #define MAX_BUCKETS 1024
 
-typedef enum {
+typedef volatile enum _state_t {
     ENTRY_INCOMPLETE = 0,
     ENTRY_COMPLETE = 1,
     ENTRY_CANCELLED = 2

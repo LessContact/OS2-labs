@@ -281,6 +281,7 @@ int cache_entry_append_chunk(cache_entry_t *entry, const void *data, size_t size
 }
 
 // Function to read from cache entry with waiting
+// returns number of bytes read or -1 on cache failure
 ssize_t cache_entry_read(cache_entry_t *entry, void *buf, ssize_t offset, ssize_t size) {
     pthread_mutex_lock(&entry->lock);
 
@@ -294,7 +295,7 @@ ssize_t cache_entry_read(cache_entry_t *entry, void *buf, ssize_t offset, ssize_
         // Check if entry was cancelled
         if (entry->state == ENTRY_CANCELLED) { // todo maybe shift this after ETIMEDOUT
             pthread_mutex_unlock(&entry->lock);
-            log_error("cache entry was cancelled");
+            log_warn("cache entry was cancelled");
             return -1;
         }
         if (rc == ETIMEDOUT) {

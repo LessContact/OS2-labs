@@ -37,7 +37,7 @@ static void disconnect(int sock) {
     // }
     int shutdown_rdwr = shutdown(sock, SHUT_RDWR);
     if (shutdown_rdwr == -1) {
-        log_error("shutdown RDWR failed: %s", strerror(errno));
+        log_warn("shutdown RDWR failed: %s", strerror(errno));
     }
     ret = close(sock);
     if (ret == -1) {
@@ -123,6 +123,10 @@ int resolve_and_connect(const char *url, int port) {
     freeaddrinfo(res); // Free the linked-list
 
     if (rp == NULL) {
+        int ret2 = close(sockfd);
+        if (ret2 == -1) { // don't actually know if this is necessary but sure
+            log_error("failed to close socket: %s", strerror(errno));
+        }
         log_error("Could not connect to any address");
         return -1;
     }
@@ -160,7 +164,7 @@ int handle_cached_request(cache_entry_t *entry, int client_fd) {
     while ((bytes_read = cache_entry_read(entry, buffer, offset, sizeof(buffer))) > 0) {
         if ((bytes_sent = send_buffer(client_fd, buffer, bytes_read)) < 0) {
             log_error("could not send cached data to client");
-            disconnect(client_fd);
+            // disconnect(client_fd);
             return -1;
         }
         // offset += bytes_read;
@@ -215,6 +219,7 @@ void process_request(connection_ctx_t *conn) {
             log_error("Error parsing request with picoparser");
             disconnect(client_sock_fd);
             conn->sock_fd = -1;
+            return;
         }
 
         /* request is incomplete, continue the loop */
@@ -223,6 +228,7 @@ void process_request(connection_ctx_t *conn) {
             log_error("Request is too long");
             disconnect(client_sock_fd);
             conn->sock_fd = -1;
+            return;
         }
     }
     // log_debug("request received and parsed: %s", buffer);
@@ -285,6 +291,7 @@ void process_request(connection_ctx_t *conn) {
             // return;
         }
         disconnect(client_sock_fd);
+        conn->sock_fd = -1; // god i looked for this bug for so fucking long uuuuuggggghhh, how can i fucking forget this fucking bullshit i spent over an hour for this little tiny but apparently very significant fucking shit all because of not having this little line here i was sitting there and trying my goddamn hardest to figure out why in god's name my poll was saying there was a closed socket. FUCK
         // return;
     } else {
         // If no cache entry was found ============================================================================
@@ -299,7 +306,7 @@ void process_request(connection_ctx_t *conn) {
         log_debug("connected to %s:%d", hostname, remote_sock_fd);
         // PASS SEND request from client to remote =========================================================================
 
-        size_t bytes_sent = send_buffer(remote_sock_fd, buffer, buflen);
+        ssize_t bytes_sent = send_buffer(remote_sock_fd, buffer, buflen);
         if (bytes_sent == -1) {
             pthread_mutex_unlock(&searchCreateMutex);
             disconnect(remote_sock_fd);
