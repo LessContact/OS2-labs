@@ -10,7 +10,6 @@
 #include <unistd.h>
 #include <netdb.h>
 
-#include <curl/curl.h>
 #include "../third_party/log.h"
 
 #include "../threading/threadpool.h"
@@ -26,17 +25,19 @@ static void disconnect(int sock) {
         // Socket is in error state
         log_error("Socket error before shutdown: %s\n", strerror(error));
     }
-
     // First shutdown writing
-    int shutdown_wr = shutdown(sock, SHUT_WR);
-    if (shutdown_wr == -1) {
-        log_error("shutdown WR failed: %s", strerror(errno));
-    }
-
+    // int shutdown_wr = shutdown(sock, SHUT_WR);
+    // if (shutdown_wr == -1) {
+    //     log_error("shutdown WR failed: %s", strerror(errno));
+    // }
     // Then shutdown reading
-    int shutdown_rd = shutdown(sock, SHUT_RD);
-    if (shutdown_rd == -1) {
-        log_error("shutdown RD failed: %s", strerror(errno));
+    // int shutdown_rd = shutdown(sock, SHUT_RD);
+    // if (shutdown_rd == -1) {
+    //     log_error("shutdown RD failed: %s", strerror(errno));
+    // }
+    int shutdown_rdwr = shutdown(sock, SHUT_RDWR);
+    if (shutdown_rdwr == -1) {
+        log_error("shutdown RDWR failed: %s", strerror(errno));
     }
     ret = close(sock);
     if (ret == -1) {
@@ -130,19 +131,19 @@ int resolve_and_connect(const char *url, int port) {
 }
 
 // sends up to buflen bytes from buf to socket sockfd
-// on error or socket disconnect shuts down the socket and closes it
+// on error returns -1, it is up to the caller to disconnect the socket
 ssize_t send_buffer(int sockfd, const void *buffer, size_t buflen) {
     ssize_t total_sent_bytes = 0;
     while (total_sent_bytes < buflen) {
         ssize_t sent_bytes = send(sockfd, buffer + total_sent_bytes, buflen - total_sent_bytes, MSG_NOSIGNAL);
         if (sent_bytes == -1) {
             if (errno == EINTR) continue;
-            log_error("failed to pass request with: %s", strerror(errno));
-            disconnect(sockfd);
+            log_error("failed to send buffer with: %s", strerror(errno));
+            // disconnect(sockfd);
             return -1;
         } else if (sent_bytes == 0) {
             log_error("??? something is seriously? wrong? with: %s", strerror(errno));
-            disconnect(sockfd);
+            // disconnect(sockfd);
             return -1;
         }
         total_sent_bytes += sent_bytes;
@@ -155,13 +156,15 @@ int handle_cached_request(cache_entry_t *entry, int client_fd) {
     ssize_t offset = 0;
     char buffer[8192];
     ssize_t bytes_read;
-
+    ssize_t bytes_sent;
     while ((bytes_read = cache_entry_read(entry, buffer, offset, sizeof(buffer))) > 0) {
-        if (send_buffer(client_fd, buffer, bytes_read) < 0) {
+        if ((bytes_sent = send_buffer(client_fd, buffer, bytes_read)) < 0) {
             log_error("could not send cached data to client");
+            disconnect(client_fd);
             return -1;
         }
-        offset += bytes_read;
+        // offset += bytes_read;
+        offset += bytes_sent;
     }
     if (bytes_read == -1) {
         log_error("cache failed");
@@ -299,6 +302,7 @@ void process_request(connection_ctx_t *conn) {
         size_t bytes_sent = send_buffer(remote_sock_fd, buffer, buflen);
         if (bytes_sent == -1) {
             pthread_mutex_unlock(&searchCreateMutex);
+            disconnect(remote_sock_fd);
             disconnect(client_sock_fd);
             conn->sock_fd = -1;
             return;
@@ -403,6 +407,7 @@ void process_request(connection_ctx_t *conn) {
         if (bytes_sent == -1) {
             cache_entry_release(entry);
             cache_entry_cancel(entry);
+            disconnect(client_sock_fd);
             disconnect(remote_sock_fd);
             conn->sock_fd = -1;
             return;
@@ -443,6 +448,7 @@ void process_request(connection_ctx_t *conn) {
                         cache_entry_release(entry);
                         cache_entry_cancel(entry);
                     }
+                    disconnect(client_sock_fd);
                     disconnect(remote_sock_fd);
                     conn->sock_fd = -1;
                     return;
@@ -488,6 +494,7 @@ void process_request(connection_ctx_t *conn) {
                         cache_entry_cancel(entry);
                         cache_entry_release(entry);
                     }
+                    disconnect(client_sock_fd);
                     disconnect(remote_sock_fd);
                     conn->sock_fd = -1;
                     return;
